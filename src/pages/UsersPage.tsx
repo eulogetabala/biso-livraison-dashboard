@@ -32,7 +32,6 @@ import {
 } from '../graphql/users';
 import { rangeFromPreset, type DateRangePreset } from '../lib/format';
 import { apolloErrorMessage } from '../lib/apollo-error';
-import PaginationBar from '../components/PaginationBar';
 import { PAGE_SIZE } from '../lib/pagination';
 import type { DailyOrderPoint } from '../graphql/statistics';
 
