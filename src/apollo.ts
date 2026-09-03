@@ -6,12 +6,25 @@ import {
 } from '@apollo/client';
 import { setContext } from '@apollo/client/link/context';
 import { onError } from '@apollo/client/link/error';
+import { RetryLink } from '@apollo/client/link/retry';
 import { notifyUnauthorized } from './lib/auth-session';
 
 export const API_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 
 const httpLink = createHttpLink({
   uri: API_URL ? `${API_URL}/graphql` : '/graphql',
+});
+
+const retryLink = new RetryLink({
+  delay: {
+    initial: 1500,
+    max: 8000,
+    jitter: true,
+  },
+  attempts: {
+    max: 4,
+    retryIf: (error) => Boolean(error && !error.result),
+  },
 });
 
 const authLink = setContext((_, { headers }) => {
@@ -36,7 +49,7 @@ const errorLink = onError(({ graphQLErrors }) => {
 });
 
 export const apolloClient = new ApolloClient({
-  link: from([errorLink, authLink, httpLink]),
+  link: from([errorLink, retryLink, authLink, httpLink]),
   cache: new InMemoryCache(),
   defaultOptions: {
     watchQuery: { errorPolicy: 'all' },
