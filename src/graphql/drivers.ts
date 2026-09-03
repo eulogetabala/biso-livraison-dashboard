@@ -44,6 +44,23 @@ export const ADMIN_SET_DRIVER_AVAILABILITY = gql`
   }
 `;
 
+export const ADMIN_UPDATE_DRIVER = gql`
+  mutation AdminUpdateDriver($input: AdminUpdateDriverInput!) {
+    adminUpdateDriver(input: $input) {
+      id
+      vehicleType
+      vehiclePlate
+      isAvailable
+      user {
+        id
+        firstName
+        lastName
+        phone
+      }
+    }
+  }
+`;
+
 export type DriverRow = {
   id: string;
   userId: string;
@@ -63,6 +80,7 @@ export type DriverRow = {
 
 export function emptyDriverForm() {
   return {
+    driverId: '' as string | undefined,
     firstName: '',
     lastName: '',
     phone: '+242',
@@ -70,6 +88,19 @@ export function emptyDriverForm() {
     vehicleType: 'MOTO',
     vehiclePlate: '',
     isAvailable: false,
+  };
+}
+
+export function driverFormFromRow(row: DriverRow) {
+  return {
+    driverId: row.id,
+    firstName: row.user?.firstName ?? '',
+    lastName: row.user?.lastName ?? '',
+    phone: row.user?.phone ?? '+242',
+    password: '',
+    vehicleType: row.vehicleType || 'MOTO',
+    vehiclePlate: row.vehiclePlate ?? '',
+    isAvailable: row.isAvailable,
   };
 }
 

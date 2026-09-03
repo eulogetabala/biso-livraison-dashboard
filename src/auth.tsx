@@ -13,6 +13,7 @@ const LOGIN = gql`
         lastName
         role
         phone
+        partnerRestaurantId
       }
     }
   }
@@ -24,6 +25,7 @@ type AuthUser = {
   lastName: string;
   role: string;
   phone: string;
+  partnerRestaurantId?: string | null;
 };
 
 type AuthContextValue = {
@@ -78,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         const result = data.login;
         if (result.user.role !== 'ADMIN' && result.user.role !== 'PARTNER') {
-          throw new Error('Accès réservé aux administrateurs.');
+          throw new Error('Accès réservé aux administrateurs et partenaires.');
         }
         localStorage.setItem('biso_admin_token', result.accessToken);
         localStorage.setItem('biso_admin_user', JSON.stringify(result.user));

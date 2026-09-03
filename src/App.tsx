@@ -14,6 +14,8 @@ import CategoriesPage from './pages/CategoriesPage';
 import BannersPage from './pages/BannersPage';
 import ParcelsPage from './pages/ParcelsPage';
 import CuisinesPage from './pages/CuisinesPage';
+import ReviewsPage from './pages/ReviewsPage';
+import PartnersPage from './pages/PartnersPage';
 
 export default function App() {
   return (
@@ -27,6 +29,8 @@ export default function App() {
           <Route path="revenue" element={<RevenuePage />} />
           <Route path="drivers" element={<DriversPage />} />
           <Route path="users" element={<UsersPage />} />
+          <Route path="partners" element={<PartnersPage />} />
+          <Route path="reviews" element={<ReviewsPage />} />
           <Route path="tracking" element={<TrackingPage />} />
           <Route path="restaurants" element={<RestaurantsPage />} />
           <Route path="menus" element={<MenusPage />} />

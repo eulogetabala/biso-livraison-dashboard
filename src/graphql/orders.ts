@@ -143,3 +143,14 @@ export const ORDER_TYPE_FILTERS = [
   { value: 'RESTAURANT', label: 'Repas' },
   { value: 'MARKET', label: 'Produits' },
 ] as const;
+
+const NEXT_ORDER_STATUS: Partial<Record<string, { status: string; label: string }>> = {
+  PENDING: { status: 'CONFIRMED', label: 'Confirmer' },
+  CONFIRMED: { status: 'PREPARING', label: 'En préparation' },
+  PREPARING: { status: 'IN_TRANSIT', label: 'En livraison' },
+  IN_TRANSIT: { status: 'DELIVERED', label: 'Marquer livré' },
+};
+
+export function nextOrderAction(status: string) {
+  return NEXT_ORDER_STATUS[status] ?? null;
+}

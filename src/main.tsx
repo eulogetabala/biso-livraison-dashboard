@@ -1,17 +1,25 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ApolloProvider } from '@apollo/client';
-import { apolloClient } from './apollo';
+import { initApolloClient } from './apollo';
+import { bootstrapApiUrl } from './lib/api-config';
 import { AuthProvider } from './auth';
 import App from './App';
 import './styles.css';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <ApolloProvider client={apolloClient}>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </ApolloProvider>
-  </React.StrictMode>,
-);
+async function start() {
+  const apiBase = await bootstrapApiUrl();
+  const client = initApolloClient(apiBase);
+
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <ApolloProvider client={client}>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </ApolloProvider>
+    </React.StrictMode>,
+  );
+}
+
+void start();

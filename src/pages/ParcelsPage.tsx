@@ -18,8 +18,8 @@ import {
 } from '../graphql/parcels';
 import { rangeFromPreset, type DateRangePreset } from '../lib/format';
 import { apolloErrorMessage } from '../lib/apollo-error';
-
-const LIMIT = 20;
+import PaginationBar from '../components/PaginationBar';
+import { PAGE_SIZE } from '../lib/pagination';
 
 const STATUS_CLASS: Record<string, string> = {
   PENDING: 'warning',
@@ -53,8 +53,8 @@ export default function ParcelsPage() {
   }, [statusFilter, range]);
 
   const { data, loading, error, refetch } = useQuery(PARCELS_QUERY, {
-    variables: { page, limit: LIMIT, input },
-    fetchPolicy: 'network-only',
+    variables: { page, limit: PAGE_SIZE, input },
+    fetchPolicy: 'cache-and-network',
   });
 
   const [updateStatus, { loading: updating }] = useMutation(UPDATE_PARCEL_STATUS);
@@ -249,28 +249,13 @@ export default function ParcelsPage() {
               </table>
             </div>
 
-            {pageInfo && pageInfo.totalPages > 1 ? (
-              <div className="pagination-bar">
-                <button
-                  type="button"
-                  className="btn secondary btn-sm"
-                  disabled={!pageInfo.hasPreviousPage}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  Précédent
-                </button>
-                <span className="muted">
-                  Page {pageInfo.currentPage} / {pageInfo.totalPages}
-                </span>
-                <button
-                  type="button"
-                  className="btn secondary btn-sm"
-                  disabled={!pageInfo.hasNextPage}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Suivant
-                </button>
-              </div>
+            {pageInfo ? (
+              <PaginationBar
+                pageInfo={pageInfo}
+                pageSize={PAGE_SIZE}
+                loading={loading}
+                onPageChange={setPage}
+              />
             ) : null}
           </>
         ) : null}

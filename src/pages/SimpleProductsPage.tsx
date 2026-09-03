@@ -9,6 +9,7 @@ import ModalFormFooter from '../components/ModalFormFooter';
 import SearchBar from '../components/SearchBar';
 import EmptyState from '../components/EmptyState';
 import QueryErrorBanner from '../components/QueryErrorBanner';
+import PaginationBar from '../components/PaginationBar';
 import ImageUpload from '../components/ImageUpload';
 import {
   CREATE_MENU_ITEM,
@@ -22,12 +23,15 @@ import {
 import { EPICERIE_LABELS } from '../lib/constants';
 import { apolloErrorMessage } from '../lib/apollo-error';
 import { assetUrl } from '../lib/api';
+import { PAGE_SIZE, paginateList } from '../lib/pagination';
 
 const FORM_ID = 'simple-product-form';
 
 export default function SimpleProductsPage() {
-  const { data: categoriesData } = useQuery(MARKET_CATEGORIES_QUERY, { fetchPolicy: 'network-only' });
-  const { data, loading, error: queryError, refetch } = useQuery(SIMPLE_PRODUCTS_QUERY, { fetchPolicy: 'network-only' });
+  const { data: categoriesData } = useQuery(MARKET_CATEGORIES_QUERY);
+  const { data, loading, error: queryError, refetch } = useQuery(SIMPLE_PRODUCTS_QUERY, {
+    fetchPolicy: 'cache-and-network',
+  });
 
   const [createMenuItem] = useMutation(CREATE_MENU_ITEM);
   const [updateMenuItem] = useMutation(UPDATE_MENU_ITEM);
@@ -38,6 +42,7 @@ export default function SimpleProductsPage() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState('');
+  const [page, setPage] = useState(1);
 
   const items: MenuItemRow[] = data?.searchMenuItems?.items ?? [];
   const categories = categoriesData?.allMarketCategories ?? [];
@@ -53,6 +58,13 @@ export default function SimpleProductsPage() {
         categories.find((c: { id: string }) => c.id === item.marketCategoryId)?.label.toLowerCase().includes(q),
     );
   }, [items, filter, categories]);
+
+  const paginated = useMemo(() => paginateList(filtered, page), [filtered, page]);
+
+  function changeFilter(value: string) {
+    setFilter(value);
+    setPage(1);
+  }
 
   function openCreate() {
     setForm(emptySimpleProductForm());
@@ -128,14 +140,15 @@ export default function SimpleProductsPage() {
       <QueryErrorBanner error={queryError} onRetry={() => refetch()} />
 
       <SectionCard>
-        <SearchBar value={filter} onChange={setFilter} placeholder="Rechercher par nom, vendeur ou catégorie…" />
+        <SearchBar value={filter} onChange={changeFilter} placeholder="Rechercher par nom, vendeur ou catégorie…" />
       </SectionCard>
 
       <EmptyState loading={loading && items.length === 0} empty={!loading && filtered.length === 0} emptyTitle="Aucun produit" emptyHint="Ajoutez un pain maison, des fruits, etc." />
 
       {filtered.length > 0 ? (
+        <>
         <div className="entity-grid entity-grid--products">
-          {filtered.map((item) => (
+          {paginated.items.map((item) => (
             <article key={item.id} className="entity-card product-card">
               <div className="product-card-media">
                 {item.imageUrl ? (
@@ -162,6 +175,13 @@ export default function SimpleProductsPage() {
             </article>
           ))}
         </div>
+        <PaginationBar
+          pageInfo={paginated.pageInfo}
+          pageSize={PAGE_SIZE}
+          loading={loading}
+          onPageChange={setPage}
+        />
+        </>
       ) : null}
 
       <Modal

@@ -7,6 +7,7 @@ import Field from '../components/Field';
 import FormSection from '../components/FormSection';
 import ModalFormFooter from '../components/ModalFormFooter';
 import EmptyState from '../components/EmptyState';
+import PaginationBar from '../components/PaginationBar';
 import ImageUpload from '../components/ImageUpload';
 import {
   CREATE_MENU_ITEM,
@@ -25,26 +26,39 @@ import {
   MENU_ITEM_CATEGORIES,
   RESTAURANT_MENU_SECTIONS,
   menuCategoryLabel,
+  sectionKeyForCategory,
 } from '../lib/constants';
 import { apolloErrorMessage } from '../lib/apollo-error';
 import { assetUrl } from '../lib/api';
+import { useAuth } from '../auth';
+import { isPartner } from '../lib/roles';
+import { PAGE_SIZE, paginateList } from '../lib/pagination';
 
 const FORM_ID = 'menu-item-form';
 
 export default function MenusPage() {
+  const { user } = useAuth();
+  const partnerUser = isPartner(user?.role);
+
   const { data: restaurantsData } = useQuery(RESTAURANTS_QUERY);
-  const restaurants = (restaurantsData?.searchRestaurants?.items ?? []).filter(
+  const restaurants = (restaurantsData?.restaurants?.items ?? []).filter(
     (r: { type?: string | null }) => r.type !== 'MARKET',
   );
 
   const [restaurantId, setRestaurantId] = useState('');
-  const selectedRestaurantId = restaurantId || restaurants[0]?.id || '';
+  const partnerRestaurantId = user?.partnerRestaurantId ?? '';
+  const selectedRestaurantId =
+    partnerUser && partnerRestaurantId
+      ? partnerRestaurantId
+      : restaurantId || restaurants[0]?.id || '';
   const selectedRestaurant = restaurants.find((r: { id: string }) => r.id === selectedRestaurantId);
   const [activeSection, setActiveSection] = useState(RESTAURANT_MENU_SECTIONS[0].key);
+  const [page, setPage] = useState(1);
 
   const { data, loading, refetch } = useQuery(MENU_ITEMS_QUERY, {
     skip: !selectedRestaurantId,
     variables: { restaurantId: selectedRestaurantId },
+    fetchPolicy: 'network-only',
   });
 
   const [createMenuItem] = useMutation(CREATE_MENU_ITEM);
@@ -58,9 +72,18 @@ export default function MenusPage() {
   const [supplementDraft, setSupplementDraft] = useState<Partial<MenuSupplementRow>>({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [supplementSaving, setSupplementSaving] = useState(false);
 
   const items: MenuItemRow[] = data?.searchMenuItems?.items ?? [];
   const section = RESTAURANT_MENU_SECTIONS.find((s) => s.key === activeSection) ?? RESTAURANT_MENU_SECTIONS[0];
+
+  const sectionCategoryOptions = useMemo(
+    () =>
+      MENU_ITEM_CATEGORIES.filter((cat) =>
+        (section.categories as readonly string[]).includes(cat.value),
+      ),
+    [section],
+  );
 
   const filteredItems = useMemo(
     () =>
@@ -69,6 +92,8 @@ export default function MenusPage() {
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name)),
     [items, section],
   );
+
+  const paginated = useMemo(() => paginateList(filteredItems, page), [filteredItems, page]);
 
   const sectionCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -91,6 +116,7 @@ export default function MenusPage() {
   }
 
   function openEdit(row: MenuItemRow) {
+    setActiveSection(sectionKeyForCategory(row.category));
     setForm({ ...row, supplements: row.supplements ?? [] });
     setSupplementDraft({});
     setError('');
@@ -102,31 +128,50 @@ export default function MenusPage() {
   }
 
   async function saveSupplement(menuItemId: string) {
-    if (!supplementDraft.name?.trim()) return;
-    await upsertSupplement({
-      variables: {
-        input: {
-          id: supplementDraft.id,
-          menuItemId,
-          name: supplementDraft.name.trim(),
-          price: Number(supplementDraft.price ?? 0),
-          isAvailable: supplementDraft.isAvailable !== false,
-          sortOrder: Number(supplementDraft.sortOrder ?? 0),
+    if (!supplementDraft.name?.trim()) {
+      setError('Indiquez un nom pour le supplément.');
+      return;
+    }
+    setSupplementSaving(true);
+    setError('');
+    try {
+      await upsertSupplement({
+        variables: {
+          input: {
+            id: supplementDraft.id,
+            menuItemId,
+            name: supplementDraft.name.trim(),
+            price: Number(supplementDraft.price ?? 0),
+            isAvailable: supplementDraft.isAvailable !== false,
+            sortOrder: Number(supplementDraft.sortOrder ?? 0),
+          },
         },
-      },
-    });
-    setSupplementDraft({});
-    const refreshed = (await refetch()).data?.searchMenuItems?.items ?? [];
-    const updated = refreshed.find((item: MenuItemRow) => item.id === menuItemId);
-    if (updated) setForm({ ...updated });
+      });
+      setSupplementDraft({});
+      const refreshed = (await refetch()).data?.searchMenuItems?.items ?? [];
+      const updated = refreshed.find((item: MenuItemRow) => item.id === menuItemId);
+      if (updated) setForm({ ...updated, supplements: updated.supplements ?? [] });
+    } catch (err) {
+      setError(apolloErrorMessage(err));
+    } finally {
+      setSupplementSaving(false);
+    }
   }
 
   async function removeSupplement(id: string, menuItemId: string) {
     if (!window.confirm('Supprimer ce supplément ?')) return;
-    await deleteSupplement({ variables: { id } });
-    const refreshed = (await refetch()).data?.searchMenuItems?.items ?? [];
-    const updated = refreshed.find((item: MenuItemRow) => item.id === menuItemId);
-    if (updated) setForm({ ...updated });
+    setSupplementSaving(true);
+    setError('');
+    try {
+      await deleteSupplement({ variables: { id } });
+      const refreshed = (await refetch()).data?.searchMenuItems?.items ?? [];
+      const updated = refreshed.find((item: MenuItemRow) => item.id === menuItemId);
+      if (updated) setForm({ ...updated, supplements: updated.supplements ?? [] });
+    } catch (err) {
+      setError(apolloErrorMessage(err));
+    } finally {
+      setSupplementSaving(false);
+    }
   }
 
   async function onSubmit(event: FormEvent) {
@@ -149,13 +194,23 @@ export default function MenusPage() {
     };
 
     try {
+      const category = input.category;
+      setActiveSection(sectionKeyForCategory(category));
+
       if (form.id) {
         await updateMenuItem({ variables: { input: { id: form.id, ...input } } });
+        await refetch();
+        setModalOpen(false);
       } else {
-        await createMenuItem({ variables: { input } });
+        const { data: createData } = await createMenuItem({ variables: { input } });
+        const created = createData?.createMenuItem as MenuItemRow | undefined;
+        await refetch();
+        if (created?.id) {
+          setForm({ ...created, supplements: created.supplements ?? [] });
+        } else {
+          setModalOpen(false);
+        }
       }
-      setModalOpen(false);
-      await refetch();
     } catch (err) {
       setError(apolloErrorMessage(err));
     } finally {
@@ -183,7 +238,11 @@ export default function MenusPage() {
     <div className="page-content">
       <PageHeader
         title="Menus restaurant"
-        subtitle={EPICERIE_LABELS.menusSubtitle}
+        subtitle={
+          partnerUser && selectedRestaurant
+            ? `Carte de ${selectedRestaurant.name}`
+            : EPICERIE_LABELS.menusSubtitle
+        }
         badge={items.length}
         action={
           <button type="button" className="btn" onClick={openCreate} disabled={!selectedRestaurantId}>
@@ -192,27 +251,32 @@ export default function MenusPage() {
         }
       />
 
-      <SectionCard title="Choisir un restaurant">
-        <div className="restaurant-picker">
-          {restaurants.map((restaurant: { id: string; name: string; imageUrl?: string | null; coverImageUrl?: string | null }) => (
-            <button
-              key={restaurant.id}
-              type="button"
-              className={`restaurant-picker-item ${selectedRestaurantId === restaurant.id ? 'active' : ''}`}
-              onClick={() => setRestaurantId(restaurant.id)}
-            >
-              <div
-                className="restaurant-picker-cover"
-                style={restaurant.coverImageUrl ? { backgroundImage: `url(${assetUrl(restaurant.coverImageUrl)})` } : undefined}
-              />
-              <div className="restaurant-picker-logo">
-                {restaurant.imageUrl ? <img src={assetUrl(restaurant.imageUrl)} alt="" /> : <span>{restaurant.name.slice(0, 1)}</span>}
-              </div>
-              <span className="restaurant-picker-name">{restaurant.name}</span>
-            </button>
-          ))}
-        </div>
-      </SectionCard>
+      {!partnerUser ? (
+        <SectionCard title="Choisir un restaurant">
+          <div className="restaurant-picker">
+            {restaurants.map((restaurant: { id: string; name: string; imageUrl?: string | null; coverImageUrl?: string | null }) => (
+              <button
+                key={restaurant.id}
+                type="button"
+                className={`restaurant-picker-item ${selectedRestaurantId === restaurant.id ? 'active' : ''}`}
+                onClick={() => {
+                  setRestaurantId(restaurant.id);
+                  setPage(1);
+                }}
+              >
+                <div
+                  className="restaurant-picker-cover"
+                  style={restaurant.coverImageUrl ? { backgroundImage: `url(${assetUrl(restaurant.coverImageUrl)})` } : undefined}
+                />
+                <div className="restaurant-picker-logo">
+                  {restaurant.imageUrl ? <img src={assetUrl(restaurant.imageUrl)} alt="" /> : <span>{restaurant.name.slice(0, 1)}</span>}
+                </div>
+                <span className="restaurant-picker-name">{restaurant.name}</span>
+              </button>
+            ))}
+          </div>
+        </SectionCard>
+      ) : null}
 
       {selectedRestaurant ? (
         <SectionCard title={`Menu · ${selectedRestaurant.name}`} className="section-spaced">
@@ -222,7 +286,10 @@ export default function MenusPage() {
                 key={s.key}
                 type="button"
                 className={`chip ${activeSection === s.key ? 'active' : ''}`}
-                onClick={() => setActiveSection(s.key)}
+                onClick={() => {
+                  setActiveSection(s.key);
+                  setPage(1);
+                }}
               >
                 {s.label} <span className="chip-count">{sectionCounts.get(s.key) ?? 0}</span>
               </button>
@@ -234,8 +301,9 @@ export default function MenusPage() {
       <EmptyState loading={loading} empty={!loading && filteredItems.length === 0} emptyTitle={`Aucun plat dans « ${section.label} »`} emptyHint="Ajoutez un plat pour ce libellé." />
 
       {filteredItems.length > 0 ? (
+        <>
         <div className="entity-grid entity-grid--products">
-          {filteredItems.map((item) => (
+          {paginated.items.map((item) => (
             <article key={item.id} className="entity-card product-card">
               <div className="product-card-media">
                 {item.imageUrl ? (
@@ -261,6 +329,13 @@ export default function MenusPage() {
             </article>
           ))}
         </div>
+        <PaginationBar
+          pageInfo={paginated.pageInfo}
+          pageSize={PAGE_SIZE}
+          loading={loading}
+          onPageChange={setPage}
+        />
+        </>
       ) : null}
 
       <Modal
@@ -286,8 +361,8 @@ export default function MenusPage() {
                 </Field>
               </div>
               <Field label="Libellé menu">
-                <select value={form.category ?? 'MAIN_COURSE'} onChange={(e) => patchForm({ category: e.target.value })}>
-                  {MENU_ITEM_CATEGORIES.filter((cat) => cat.value !== 'SIDE').map((cat) => (
+                <select value={form.category ?? section.categories[0] ?? 'MAIN_COURSE'} onChange={(e) => patchForm({ category: e.target.value })}>
+                  {sectionCategoryOptions.map((cat) => (
                     <option key={cat.value} value={cat.value}>{cat.label}</option>
                   ))}
                 </select>
@@ -332,8 +407,17 @@ export default function MenusPage() {
                   <input type="number" min={0} value={supplementDraft.price ?? 0} onChange={(e) => setSupplementDraft((s) => ({ ...s, price: Number(e.target.value) }))} />
                 </Field>
                 <div className="form-span-2">
-                  <button type="button" className="btn secondary btn-sm" onClick={() => saveSupplement(form.id!)}>
-                    {supplementDraft.id ? 'Mettre à jour' : '+ Ajouter le supplément'}
+                  <button
+                    type="button"
+                    className="btn secondary btn-sm"
+                    disabled={supplementSaving}
+                    onClick={() => saveSupplement(form.id!)}
+                  >
+                    {supplementSaving
+                      ? 'Enregistrement…'
+                      : supplementDraft.id
+                        ? 'Mettre à jour le supplément'
+                        : '+ Ajouter le supplément'}
                   </button>
                 </div>
               </div>
@@ -341,7 +425,9 @@ export default function MenusPage() {
           ) : null}
 
           {!form.id && canHaveSupplements ? (
-            <p className="muted">Enregistrez le plat pour gérer les suppléments.</p>
+            <p className="muted">
+              Après « Créer le plat », ce formulaire reste ouvert pour ajouter des suppléments ci-dessous.
+            </p>
           ) : null}
 
           {error ? <p className="field-error">{error}</p> : null}

@@ -62,6 +62,13 @@ export const BANNER_LINK_TYPES = [
 
 export const DEFAULT_CITY = 'Brazzaville';
 
+export function sectionKeyForCategory(category: string): string {
+  const section = RESTAURANT_MENU_SECTIONS.find((s) =>
+    (s.categories as readonly string[]).includes(category),
+  );
+  return section?.key ?? RESTAURANT_MENU_SECTIONS[0].key;
+}
+
 export function menuCategoryLabel(value: string): string {
   return MENU_ITEM_CATEGORIES.find((item) => item.value === value)?.label ?? value;
 }

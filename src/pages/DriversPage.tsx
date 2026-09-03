@@ -13,12 +13,15 @@ import EmptyState from '../components/EmptyState';
 import QueryErrorBanner from '../components/QueryErrorBanner';
 import StatCard from '../components/StatCard';
 import FilterToolbar from '../components/FilterToolbar';
+import PaginationBar from '../components/PaginationBar';
 import {
   ADMIN_CREATE_DRIVER,
   ADMIN_SET_DRIVER_AVAILABILITY,
+  ADMIN_UPDATE_DRIVER,
   DRIVER_AVAILABILITY_FILTERS,
   DRIVERS_QUERY,
   driverDisplayName,
+  driverFormFromRow,
   driverInitials,
   emptyDriverForm,
   type DriverAvailabilityFilter,
@@ -26,6 +29,7 @@ import {
 } from '../graphql/drivers';
 import { STATISTICS_OVERVIEW_QUERY } from '../graphql/statistics';
 import { apolloErrorMessage } from '../lib/apollo-error';
+import { PAGE_SIZE, paginateList } from '../lib/pagination';
 
 const FORM_ID = 'driver-form';
 
@@ -72,12 +76,15 @@ export default function DriversPage() {
   const { data, loading, error, refetch } = useQuery(DRIVERS_QUERY, { fetchPolicy: 'network-only' });
   const { data: overviewData } = useQuery(STATISTICS_OVERVIEW_QUERY, { fetchPolicy: 'network-only' });
   const [createDriver] = useMutation(ADMIN_CREATE_DRIVER);
+  const [updateDriver] = useMutation(ADMIN_UPDATE_DRIVER);
   const [setAvailability] = useMutation(ADMIN_SET_DRIVER_AVAILABILITY);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(emptyDriverForm());
   const [search, setSearch] = useState('');
   const [availabilityFilter, setAvailabilityFilter] = useState<DriverAvailabilityFilter>('');
+  const [page, setPage] = useState(1);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -106,8 +113,28 @@ export default function DriversPage() {
     });
   }, [rows, search, availabilityFilter]);
 
+  const paginated = useMemo(() => paginateList(filtered, page), [filtered, page]);
+
+  function changeSearch(value: string) {
+    setSearch(value);
+    setPage(1);
+  }
+
+  function changeAvailabilityFilter(value: DriverAvailabilityFilter) {
+    setAvailabilityFilter(value);
+    setPage(1);
+  }
+
   function openCreate() {
+    setEditing(false);
     setForm(emptyDriverForm());
+    setFormError('');
+    setModalOpen(true);
+  }
+
+  function openEdit(row: DriverRow) {
+    setEditing(true);
+    setForm(driverFormFromRow(row));
     setFormError('');
     setModalOpen(true);
   }
@@ -117,19 +144,36 @@ export default function DriversPage() {
     setSaving(true);
     setFormError('');
     try {
-      await createDriver({
-        variables: {
-          input: {
-            firstName: form.firstName.trim(),
-            lastName: form.lastName.trim(),
-            phone: form.phone.trim(),
-            password: form.password,
-            vehicleType: form.vehicleType.trim() || 'MOTO',
-            vehiclePlate: form.vehiclePlate.trim() || undefined,
-            isAvailable: form.isAvailable,
+      if (editing && form.driverId) {
+        await updateDriver({
+          variables: {
+            input: {
+              driverId: form.driverId,
+              firstName: form.firstName.trim(),
+              lastName: form.lastName.trim(),
+              phone: form.phone.trim(),
+              password: form.password.trim() || undefined,
+              vehicleType: form.vehicleType.trim() || 'MOTO',
+              vehiclePlate: form.vehiclePlate.trim() || undefined,
+              isAvailable: form.isAvailable,
+            },
           },
-        },
-      });
+        });
+      } else {
+        await createDriver({
+          variables: {
+            input: {
+              firstName: form.firstName.trim(),
+              lastName: form.lastName.trim(),
+              phone: form.phone.trim(),
+              password: form.password,
+              vehicleType: form.vehicleType.trim() || 'MOTO',
+              vehiclePlate: form.vehiclePlate.trim() || undefined,
+              isAvailable: form.isAvailable,
+            },
+          },
+        });
+      }
       setModalOpen(false);
       await refetch();
     } catch (err) {
@@ -216,11 +260,11 @@ export default function DriversPage() {
             onToChange={() => {}}
             statusFilter={availabilityFilter}
             statusOptions={DRIVER_AVAILABILITY_FILTERS}
-            onStatusChange={(value) => setAvailabilityFilter(value as DriverAvailabilityFilter)}
+            onStatusChange={(value) => changeAvailabilityFilter(value as DriverAvailabilityFilter)}
           />
           <SearchBar
             value={search}
-            onChange={setSearch}
+            onChange={changeSearch}
             placeholder="Nom, téléphone, véhicule…"
           />
         </div>
@@ -238,6 +282,7 @@ export default function DriversPage() {
 
         {!loading || rows.length > 0 ? (
           filtered.length > 0 ? (
+            <>
             <div className="orders-table-wrap drivers-table-wrap">
               <table className="orders-table drivers-table">
                 <thead>
@@ -247,10 +292,11 @@ export default function DriversPage() {
                     <th>Note</th>
                     <th>Inscription</th>
                     <th>Disponibilité</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((row) => (
+                  {paginated.items.map((row) => (
                     <tr key={row.id} className={row.isAvailable ? 'drivers-row--online' : 'drivers-row--offline'}>
                       <td>
                         <div className="driver-cell">
@@ -298,11 +344,23 @@ export default function DriversPage() {
                           onChange={() => toggleAvailability(row)}
                         />
                       </td>
+                      <td>
+                        <button type="button" className="btn secondary btn-sm" onClick={() => openEdit(row)}>
+                          Modifier
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <PaginationBar
+              pageInfo={paginated.pageInfo}
+              pageSize={PAGE_SIZE}
+              loading={loading}
+              onPageChange={setPage}
+            />
+            </>
           ) : null
         ) : null}
 
@@ -318,14 +376,14 @@ export default function DriversPage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Nouveau livreur"
-        subtitle="Compte app + profil livreur en une étape."
+        title={editing ? 'Modifier le livreur' : 'Nouveau livreur'}
+        subtitle={editing ? 'Mettre à jour le compte et le véhicule.' : 'Compte app + profil livreur en une étape.'}
         footer={
           <ModalFormFooter
             formId={FORM_ID}
             onCancel={() => setModalOpen(false)}
             saving={saving}
-            submitLabel="Créer le livreur"
+            submitLabel={editing ? 'Enregistrer' : 'Créer le livreur'}
           />
         }
       >
@@ -343,13 +401,13 @@ export default function DriversPage() {
             <Field label="Téléphone" required>
               <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
             </Field>
-            <Field label="Mot de passe" required>
+            <Field label="Mot de passe" required={!editing} hint={editing ? 'Laisser vide pour ne pas changer.' : undefined}>
               <input
                 type="password"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                minLength={6}
-                required
+                minLength={editing ? undefined : 6}
+                required={!editing}
               />
             </Field>
           </FormSection>

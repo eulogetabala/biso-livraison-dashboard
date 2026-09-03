@@ -23,6 +23,7 @@ import {
 import { ACTIVE_DELIVERIES_TRACKING_QUERY } from '../graphql/tracking';
 import { formatFcfa, lastNDaysRange } from '../lib/format';
 import { isUnauthorizedError } from '../lib/auth-session';
+import { canAccessPath, filterByRole, isAdmin } from '../lib/roles';
 
 const HUB_LINKS = [
   {
@@ -38,6 +39,7 @@ const HUB_LINKS = [
     title: 'Colis',
     text: 'Expéditions colis séparées des commandes',
     tone: 'parcels',
+    adminOnly: true,
   },
   {
     to: '/tracking',
@@ -45,6 +47,7 @@ const HUB_LINKS = [
     title: 'Suivi livraisons',
     text: 'Carte temps réel des livreurs en course',
     tone: 'tracking',
+    adminOnly: true,
   },
   {
     to: '/revenue',
@@ -59,6 +62,7 @@ const HUB_LINKS = [
     title: 'Livreurs',
     text: 'Flotte et disponibilité en temps réel',
     tone: 'drivers',
+    adminOnly: true,
   },
   {
     to: '/users',
@@ -66,6 +70,7 @@ const HUB_LINKS = [
     title: 'Utilisateurs',
     text: 'Inscriptions app, OTP et comptes bloqués',
     tone: 'users',
+    adminOnly: true,
   },
   {
     to: '/restaurants',
@@ -79,6 +84,8 @@ const HUB_LINKS = [
 export default function HomePage() {
   const { user } = useAuth();
   const range = useMemo(() => lastNDaysRange(14), []);
+  const hubLinks = filterByRole(HUB_LINKS, user?.role);
+  const showTracking = isAdmin(user?.role) && canAccessPath(user?.role, '/tracking');
 
   const overviewQuery = useQuery(STATISTICS_OVERVIEW_QUERY, {
     variables: { range },
@@ -89,8 +96,9 @@ export default function HomePage() {
     fetchPolicy: 'network-only',
   });
   const trackingQuery = useQuery(ACTIVE_DELIVERIES_TRACKING_QUERY, {
+    skip: !showTracking,
     fetchPolicy: 'network-only',
-    pollInterval: 30000,
+    pollInterval: showTracking ? 30000 : 0,
   });
 
   const overview = overviewQuery.data?.statisticsOverview;
@@ -113,7 +121,9 @@ export default function HomePage() {
           <p className="dashboard-hero-eyebrow">{today}</p>
           <h1 className="dashboard-hero-title">{greeting}</h1>
           <p className="dashboard-hero-subtitle">
-            Vue synthétique des 14 derniers jours. Le détail financier est sur la page Revenus.
+            {isAdmin(user?.role)
+              ? 'Vue synthétique des 14 derniers jours. Le détail financier est sur la page Revenus.'
+              : 'Vue synthétique de votre restaurant — 14 derniers jours.'}
           </p>
         </div>
 
@@ -132,19 +142,23 @@ export default function HomePage() {
               <span className="dashboard-hero-kpi-label">En attente</span>
               <strong>{overviewQuery.loading ? '…' : overview?.pendingOrders ?? 0}</strong>
             </article>
-            <Link to="/tracking" className="dashboard-hero-kpi dashboard-hero-kpi--link">
-              <span className="dashboard-hero-kpi-label">Livraisons actives</span>
-              <strong>{trackingQuery.loading ? '…' : activeDeliveries}</strong>
-              <span className="dashboard-hero-kpi-hint">Suivi carte →</span>
-            </Link>
-            <article className="dashboard-hero-kpi">
-              <span className="dashboard-hero-kpi-label">Livreurs dispo</span>
-              <strong>
-                {overviewQuery.loading
-                  ? '…'
-                  : `${overview?.availableDriverProfiles ?? 0}/${overview?.totalDriverProfiles ?? 0}`}
-              </strong>
-            </article>
+            {showTracking ? (
+              <Link to="/tracking" className="dashboard-hero-kpi dashboard-hero-kpi--link">
+                <span className="dashboard-hero-kpi-label">Livraisons actives</span>
+                <strong>{trackingQuery.loading ? '…' : activeDeliveries}</strong>
+                <span className="dashboard-hero-kpi-hint">Suivi carte →</span>
+              </Link>
+            ) : null}
+            {isAdmin(user?.role) ? (
+              <article className="dashboard-hero-kpi">
+                <span className="dashboard-hero-kpi-label">Livreurs dispo</span>
+                <strong>
+                  {overviewQuery.loading
+                    ? '…'
+                    : `${overview?.availableDriverProfiles ?? 0}/${overview?.totalDriverProfiles ?? 0}`}
+                </strong>
+              </article>
+            ) : null}
           </div>
         ) : null}
       </header>
@@ -188,7 +202,7 @@ export default function HomePage() {
           <section className="dashboard-hub">
             <h2 className="dashboard-hub-title">Accès rapide</h2>
             <div className="dashboard-hub-grid">
-              {HUB_LINKS.map((item) => {
+              {hubLinks.map((item) => {
                 const Icon = item.icon;
                 return (
                   <Link key={item.to} to={item.to} className={`dashboard-hub-card dashboard-hub-card--${item.tone}`}>
@@ -208,7 +222,9 @@ export default function HomePage() {
 
           <p className="dashboard-footnote muted">
             <ClipboardList size={14} aria-hidden />
-            Menus, produits, bannières et cuisines restent accessibles depuis le menu latéral.
+            {isAdmin(user?.role)
+              ? 'Menus, produits, bannières et cuisines restent accessibles depuis le menu latéral.'
+              : 'Gérez vos menus et votre fiche restaurant depuis le menu latéral.'}
           </p>
         </>
       ) : null}

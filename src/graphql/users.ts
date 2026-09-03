@@ -89,18 +89,28 @@ export type UserStatusFilter = '' | 'verified' | 'pending' | 'blocked';
 
 export const USER_STATUS_FILTERS: { value: UserStatusFilter; label: string }[] = [
   { value: '', label: 'Tous' },
-  { value: 'verified', label: 'OK (OTP validé)' },
+  { value: 'verified', label: 'Vérifiés' },
   { value: 'pending', label: 'OTP en attente' },
   { value: 'blocked', label: 'Bloqués' },
 ];
 
+export function userDisplayName(user: UserRow): string {
+  return `${user.firstName} ${user.lastName}`.trim();
+}
+
+export function userInitials(user: Pick<UserRow, 'firstName' | 'lastName'>): string {
+  const first = user.firstName?.trim().charAt(0) ?? '';
+  const last = user.lastName?.trim().charAt(0) ?? '';
+  return `${first}${last}`.toUpperCase() || '?';
+}
+
 export function userStatusLabel(user: UserRow): string {
   if (user.isBlocked) return 'Bloqué';
-  if (user.phoneVerified) return 'OK';
+  if (user.phoneVerified) return 'Vérifié';
   return 'OTP en attente';
 }
 
-export function userStatusClass(user: UserRow): string {
+export function userStatusClass(user: UserRow): 'danger' | 'success' | 'warning' {
   if (user.isBlocked) return 'danger';
   if (user.phoneVerified) return 'success';
   return 'warning';

@@ -1,4 +1,4 @@
-import { apiUrl } from '../apollo';
+import { apiUrl } from './api-config';
 
 export async function uploadImage(file: File, token: string): Promise<string> {
   const form = new FormData();

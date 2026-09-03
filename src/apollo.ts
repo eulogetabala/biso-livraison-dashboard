@@ -9,11 +9,7 @@ import { onError } from '@apollo/client/link/error';
 import { RetryLink } from '@apollo/client/link/retry';
 import { notifyUnauthorized } from './lib/auth-session';
 
-export const API_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
-
-const httpLink = createHttpLink({
-  uri: API_URL ? `${API_URL}/graphql` : '/graphql',
-});
+export let apolloClient!: ApolloClient;
 
 const retryLink = new RetryLink({
   delay: {
@@ -23,7 +19,12 @@ const retryLink = new RetryLink({
   },
   attempts: {
     max: 4,
-    retryIf: (error) => Boolean(error && !error.result),
+    retryIf: (error) => {
+      if (!error) return false;
+      const status = (error as { statusCode?: number }).statusCode;
+      if (status === 429) return false;
+      return !error.result;
+    },
   },
 });
 
@@ -48,17 +49,23 @@ const errorLink = onError(({ graphQLErrors }) => {
   }
 });
 
-export const apolloClient = new ApolloClient({
-  link: from([errorLink, retryLink, authLink, httpLink]),
-  cache: new InMemoryCache(),
-  defaultOptions: {
-    watchQuery: { errorPolicy: 'all' },
-    query: { errorPolicy: 'all' },
-  },
-});
+export function initApolloClient(apiBaseUrl: string): ApolloClient {
+  const base = apiBaseUrl.replace(/\/$/, '');
+  const httpLink = createHttpLink({
+    uri: `${base}/graphql`,
+  });
 
-export function apiUrl(path: string): string {
-  if (path.startsWith('http')) return path;
-  const normalized = path.startsWith('/') ? path : `/${path}`;
-  return API_URL ? `${API_URL}${normalized}` : normalized;
+  apolloClient = new ApolloClient({
+    link: from([errorLink, retryLink, authLink, httpLink]),
+    cache: new InMemoryCache(),
+    defaultOptions: {
+      watchQuery: { errorPolicy: 'all' },
+      query: { errorPolicy: 'all' },
+    },
+  });
+
+  return apolloClient;
 }
+
+/** @deprecated Utiliser apiUrl depuis lib/api-config.ts */
+export { apiUrl } from './lib/api-config';

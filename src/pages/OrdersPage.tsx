@@ -10,6 +10,7 @@ import Modal from '../components/Modal';
 import AssignDriverModal from '../components/AssignDriverModal';
 import {
   CANCEL_ORDER,
+  nextOrderAction,
   ORDER_STATUS_FILTERS,
   ORDER_TYPE_FILTERS,
   ORDERS_QUERY,
@@ -18,6 +19,8 @@ import {
 } from '../graphql/orders';
 import { formatFcfa, ORDER_STATUS_LABELS, rangeFromPreset, type DateRangePreset } from '../lib/format';
 import { apolloErrorMessage } from '../lib/apollo-error';
+import PaginationBar from '../components/PaginationBar';
+import { PAGE_SIZE } from '../lib/pagination';
 
 const STATUS_CLASS: Record<string, string> = {
   PENDING: 'warning',
@@ -27,8 +30,6 @@ const STATUS_CLASS: Record<string, string> = {
   DELIVERED: 'success',
   CANCELLED: 'danger',
 };
-
-const LIMIT = 20;
 
 function isActiveDelivery(order: OrderRow) {
   const status = order.delivery?.status;
@@ -61,7 +62,7 @@ export default function OrdersPage() {
   }, [statusFilter, typeFilter, range]);
 
   const { data, loading, error, refetch } = useQuery(ORDERS_QUERY, {
-    variables: { page, limit: LIMIT, input },
+    variables: { page, limit: PAGE_SIZE, input },
     fetchPolicy: 'network-only',
   });
 
@@ -88,15 +89,17 @@ export default function OrdersPage() {
     setPage(1);
   }
 
-  async function handleConfirm(order: OrderRow) {
+  async function handleAdvance(order: OrderRow) {
+    const next = nextOrderAction(order.status);
+    if (!next) return;
     setActionError('');
     try {
       await updateStatus({
-        variables: { input: { id: order.id, status: 'CONFIRMED' } },
+        variables: { input: { id: order.id, status: next.status } },
       });
       await refetch();
       if (detailOrder?.id === order.id) {
-        setDetailOrder({ ...order, status: 'CONFIRMED' });
+        setDetailOrder({ ...order, status: next.status });
       }
     } catch (err) {
       setActionError(apolloErrorMessage(err));
@@ -117,10 +120,6 @@ export default function OrdersPage() {
 
   function canAssign(order: OrderRow) {
     return !order.delivery && order.status !== 'CANCELLED' && order.status !== 'DELIVERED';
-  }
-
-  function canConfirm(order: OrderRow) {
-    return order.status === 'PENDING';
   }
 
   function canCancel(order: OrderRow) {
@@ -181,7 +180,9 @@ export default function OrdersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => (
+                  {rows.map((row) => {
+                    const next = nextOrderAction(row.status);
+                    return (
                     <tr key={row.id}>
                       <td>{new Date(row.createdAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</td>
                       <td>
@@ -231,41 +232,27 @@ export default function OrdersPage() {
                           <button type="button" className="btn secondary btn-sm" onClick={() => setDetailOrder(row)}>
                             Détail
                           </button>
-                          {canConfirm(row) ? (
-                            <button type="button" className="btn btn-sm" disabled={busy} onClick={() => handleConfirm(row)}>
-                              Confirmer
+                          {next ? (
+                            <button type="button" className="btn btn-sm" disabled={busy} onClick={() => handleAdvance(row)}>
+                              {next.label}
                             </button>
                           ) : null}
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
-            {pageInfo && pageInfo.totalPages > 1 ? (
-              <div className="pagination-bar">
-                <button
-                  type="button"
-                  className="btn secondary btn-sm"
-                  disabled={!pageInfo.hasPreviousPage}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  Précédent
-                </button>
-                <span className="muted">
-                  Page {pageInfo.currentPage} / {pageInfo.totalPages}
-                </span>
-                <button
-                  type="button"
-                  className="btn secondary btn-sm"
-                  disabled={!pageInfo.hasNextPage}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Suivant
-                </button>
-              </div>
+            {pageInfo ? (
+              <PaginationBar
+                pageInfo={pageInfo}
+                pageSize={PAGE_SIZE}
+                loading={loading}
+                onPageChange={setPage}
+              />
             ) : null}
           </>
         ) : null}
@@ -280,9 +267,9 @@ export default function OrdersPage() {
         footer={
           detailOrder ? (
             <div className="modal-footer-actions">
-              {canConfirm(detailOrder) ? (
-                <button type="button" className="btn btn-sm" disabled={busy} onClick={() => handleConfirm(detailOrder)}>
-                  Confirmer
+              {nextOrderAction(detailOrder.status) ? (
+                <button type="button" className="btn btn-sm" disabled={busy} onClick={() => handleAdvance(detailOrder)}>
+                  {nextOrderAction(detailOrder.status)!.label}
                 </button>
               ) : null}
               {canAssign(detailOrder) ? (

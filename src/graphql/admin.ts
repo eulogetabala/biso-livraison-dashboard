@@ -13,7 +13,7 @@ export const CATALOG_STATS_QUERY = gql`
 
 export const RESTAURANTS_QUERY = gql`
   query AdminRestaurants($page: Int = 1, $limit: Int = 100) {
-    searchRestaurants(page: $page, limit: $limit, input: { onlyActive: false }) {
+    restaurants(page: $page, limit: $limit) {
       items {
         id
         name
@@ -35,6 +35,18 @@ export const RESTAURANTS_QUERY = gql`
         isFeatured
         sortOrder
       }
+    }
+  }
+`;
+
+export const ACTIVE_CUISINES_QUERY = gql`
+  query ActiveCuisineTypes {
+    activeCuisineTypes {
+      id
+      value
+      label
+      emoji
+      isActive
     }
   }
 `;
@@ -111,28 +123,36 @@ export const DELETE_MARKET_CATEGORY = gql`
   }
 `;
 
+export const MENU_ITEM_FIELDS = `
+  id
+  name
+  description
+  price
+  category
+  imageUrl
+  isAvailable
+  isFeatured
+  sortOrder
+  restaurantId
+  kind
+  supplements {
+    id
+    name
+    price
+    isAvailable
+    sortOrder
+  }
+`;
+
 export const MENU_ITEMS_QUERY = gql`
   query AdminMenuItems($restaurantId: ID!) {
-    searchMenuItems(page: 1, limit: 100, input: { restaurantId: $restaurantId, restaurantDishesOnly: true }) {
+    searchMenuItems(
+      page: 1
+      limit: 100
+      input: { restaurantId: $restaurantId, restaurantDishesOnly: true, onlyAvailable: false }
+    ) {
       items {
-        id
-        name
-        description
-        price
-        category
-        imageUrl
-        isAvailable
-        isFeatured
-        sortOrder
-        restaurantId
-        kind
-        supplements {
-          id
-          name
-          price
-          isAvailable
-          sortOrder
-        }
+        ${MENU_ITEM_FIELDS}
       }
     }
   }
@@ -163,7 +183,7 @@ export const SIMPLE_PRODUCTS_QUERY = gql`
 export const CREATE_MENU_ITEM = gql`
   mutation CreateMenuItem($input: CreateMenuItemInput!) {
     createMenuItem(input: $input) {
-      id
+      ${MENU_ITEM_FIELDS}
     }
   }
 `;
@@ -171,7 +191,7 @@ export const CREATE_MENU_ITEM = gql`
 export const UPDATE_MENU_ITEM = gql`
   mutation UpdateMenuItem($input: UpdateMenuItemInput!) {
     updateMenuItem(input: $input) {
-      id
+      ${MENU_ITEM_FIELDS}
     }
   }
 `;

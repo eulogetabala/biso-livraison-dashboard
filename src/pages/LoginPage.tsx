@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { ApolloError } from '@apollo/client';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../auth';
+import ApiTargetBadge from '../components/ApiTargetBadge';
 import logo from '../../assets/logo.png';
 
 function loginErrorMessage(error: unknown): string {
@@ -42,6 +43,7 @@ export default function LoginPage() {
         </div>
         <h2>Connexion Manager</h2>
         <p className="muted">Gérez restaurants, menus et contenu de l&apos;application.</p>
+        <ApiTargetBadge />
         <form className="form-grid login-form" onSubmit={onSubmit}>
           <label className="field">
             <span className="field-label">Téléphone</span>

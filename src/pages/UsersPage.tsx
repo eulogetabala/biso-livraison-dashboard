@@ -1,14 +1,21 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@apollo/client';
-import { ShieldBan, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Phone,
+  Search,
+  ShieldBan,
+  ShieldCheck,
+  UserPlus,
+  Users,
+} from 'lucide-react';
 import PageHeader from '../components/PageHeader';
-import SectionCard from '../components/SectionCard';
 import StatCard from '../components/StatCard';
 import QueryErrorBanner from '../components/QueryErrorBanner';
-import FilterToolbar from '../components/FilterToolbar';
-import SearchBar from '../components/SearchBar';
 import EmptyState from '../components/EmptyState';
 import TrendChart from '../components/TrendChart';
+import PaginationBar from '../components/PaginationBar';
 import {
   ADMIN_SET_USER_BLOCKED,
   DAILY_USER_REGISTRATIONS_QUERY,
@@ -16,6 +23,8 @@ import {
   USER_STATUS_FILTERS,
   USER_STATISTICS_OVERVIEW_QUERY,
   USERS_PAGINATED_QUERY,
+  userDisplayName,
+  userInitials,
   userStatusClass,
   userStatusLabel,
   type UserRow,
@@ -23,33 +32,43 @@ import {
 } from '../graphql/users';
 import { rangeFromPreset, type DateRangePreset } from '../lib/format';
 import { apolloErrorMessage } from '../lib/apollo-error';
+import PaginationBar from '../components/PaginationBar';
+import { PAGE_SIZE } from '../lib/pagination';
 import type { DailyOrderPoint } from '../graphql/statistics';
 
-const LIMIT = 20;
+const PERIOD_OPTIONS: { id: DateRangePreset; label: string }[] = [
+  { id: 'all', label: 'Toute la période' },
+  { id: '7d', label: '7 jours' },
+  { id: '30d', label: '30 jours' },
+  { id: 'month', label: 'Ce mois' },
+  { id: 'year', label: 'Cette année' },
+];
+
+function formatJoined(date: string): string {
+  return new Date(date).toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
 
 export default function UsersPage() {
-  const [preset, setPreset] = useState<DateRangePreset>('all');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
+  const [preset, setPreset] = useState<DateRangePreset>('30d');
   const [statusFilter, setStatusFilter] = useState<UserStatusFilter>('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [showChart, setShowChart] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
 
-  const range = useMemo(
-    () => rangeFromPreset(preset, preset === 'custom' ? { from: customFrom, to: customTo } : undefined),
-    [preset, customFrom, customTo],
-  );
+  const range = useMemo(() => rangeFromPreset(preset), [preset]);
 
   const listInput = useMemo(
     () => ({
       ...searchInputFromStatus(statusFilter),
-      ...(range.from ? { from: range.from } : {}),
-      ...(range.to ? { to: range.to } : {}),
       search: search.trim() || undefined,
     }),
-    [statusFilter, range, search],
+    [statusFilter, search],
   );
 
   const statsQuery = useQuery(USER_STATISTICS_OVERVIEW_QUERY, {
@@ -59,9 +78,10 @@ export default function UsersPage() {
   const dailyQuery = useQuery(DAILY_USER_REGISTRATIONS_QUERY, {
     variables: { range },
     fetchPolicy: 'network-only',
+    skip: !showChart,
   });
   const listQuery = useQuery(USERS_PAGINATED_QUERY, {
-    variables: { page, limit: LIMIT, input: listInput },
+    variables: { page, limit: PAGE_SIZE, input: listInput },
     fetchPolicy: 'network-only',
   });
 
@@ -78,11 +98,11 @@ export default function UsersPage() {
     [dailyRaw],
   );
 
-  const firstError = statsQuery.error ?? dailyQuery.error ?? listQuery.error;
+  const firstError = statsQuery.error ?? listQuery.error;
 
   function refetchAll() {
     statsQuery.refetch();
-    dailyQuery.refetch();
+    if (showChart) dailyQuery.refetch();
     listQuery.refetch();
   }
 
@@ -94,17 +114,12 @@ export default function UsersPage() {
   function changePreset(next: DateRangePreset) {
     setPreset(next);
     setPage(1);
-    if (next === 'custom' && !customFrom) {
-      const r = rangeFromPreset('30d');
-      setCustomFrom(r.from);
-      setCustomTo(r.to);
-    }
   }
 
   async function toggleBlocked(user: UserRow) {
     const nextBlocked = !user.isBlocked;
     const label = nextBlocked ? 'bloquer' : 'débloquer';
-    if (!window.confirm(`${nextBlocked ? 'Bloquer' : 'Débloquer'} ${user.firstName} ${user.lastName} ?`)) {
+    if (!window.confirm(`${nextBlocked ? 'Bloquer' : 'Débloquer'} ${userDisplayName(user)} ?`)) {
       return;
     }
 
@@ -123,80 +138,111 @@ export default function UsersPage() {
   }
 
   return (
-    <>
+    <div className="page-content users-page">
       <PageHeader
         title="Utilisateurs"
-        subtitle="Inscriptions app, statut OTP et gestion des comptes bloqués."
+        subtitle="Clients inscrits sur l'app mobile — statut OTP et gestion des accès."
         badge={stats?.totalClients ?? total}
       />
 
       <QueryErrorBanner error={firstError} onRetry={refetchAll} />
-      {actionError ? <p className="form-error">{actionError}</p> : null}
+      {actionError ? <p className="users-action-error">{actionError}</p> : null}
 
-      <SectionCard title="Période des statistiques" subtitle="Graphiques et indicateurs">
-        <FilterToolbar
-          preset={preset}
-          customFrom={customFrom}
-          customTo={customTo}
-          onPresetChange={changePreset}
-          onFromChange={(value) => { setCustomFrom(value); setPage(1); }}
-          onToChange={(value) => { setCustomTo(value); setPage(1); }}
-        />
-      </SectionCard>
+      <div className="users-overview">
+        <div className="stats-grid stats-grid--3">
+          <StatCard
+            icon={Users}
+            label="Clients inscrits"
+            value={stats?.totalClients ?? 0}
+            loading={statsQuery.loading}
+          />
+          <StatCard
+            icon={UserPlus}
+            label="Nouveaux"
+            value={stats?.newRegistrations ?? 0}
+            hint="Sur la période sélectionnée"
+            tone="accent"
+            loading={statsQuery.loading}
+          />
+          <StatCard
+            icon={ShieldCheck}
+            label="OTP validé"
+            value={stats?.verifiedRegistrations ?? 0}
+            hint={`${stats?.pendingOtp ?? 0} en attente · ${stats?.blockedClients ?? 0} bloqué(s)`}
+            tone="success"
+            loading={statsQuery.loading}
+          />
+        </div>
 
-      <div className="stats-grid stats-grid--4">
-        <StatCard
-          icon={Users}
-          label="Total clients"
-          value={stats?.totalClients ?? 0}
-          loading={statsQuery.loading}
-        />
-        <StatCard
-          icon={UserPlus}
-          label="Nouveaux (période)"
-          value={stats?.newRegistrations ?? 0}
-          tone="accent"
-          loading={statsQuery.loading}
-        />
-        <StatCard
-          icon={ShieldCheck}
-          label="OTP validé (période)"
-          value={stats?.verifiedRegistrations ?? 0}
-          tone="success"
-          loading={statsQuery.loading}
-        />
-        <StatCard
-          icon={ShieldBan}
-          label="Bloqués / OTP en attente"
-          value={`${stats?.blockedClients ?? 0} / ${stats?.pendingOtp ?? 0}`}
-          tone="warning"
-          loading={statsQuery.loading}
-        />
+        <div className="users-period-row">
+          <label className="users-period" htmlFor="users-period-select">
+            <span className="users-period-label">Période stats</span>
+            <select
+              id="users-period-select"
+              value={preset}
+              onChange={(e) => changePreset(e.target.value as DateRangePreset)}
+            >
+              {PERIOD_OPTIONS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="users-chart-toggle"
+            onClick={() => setShowChart((open) => !open)}
+            aria-expanded={showChart}
+          >
+            {showChart ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+            {showChart ? 'Masquer le graphique' : 'Voir les inscriptions'}
+          </button>
+        </div>
+
+        {showChart ? (
+          <div className="users-chart-panel">
+            <TrendChart data={dailyChart} loading={dailyQuery.loading} metric="orders" />
+          </div>
+        ) : null}
       </div>
 
-      <SectionCard title="Inscriptions" subtitle="Évolution sur la période sélectionnée">
-        <TrendChart data={dailyChart} loading={dailyQuery.loading} metric="orders" />
-      </SectionCard>
+      <div className="card users-panel">
+        <div className="users-toolbar">
+          <label className="users-search">
+            <Search size={18} aria-hidden className="users-search-icon" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Nom ou téléphone…"
+              aria-label="Rechercher un utilisateur"
+            />
+          </label>
 
-      <SectionCard title="Liste des utilisateurs" subtitle={total > 0 ? `${total} utilisateur${total > 1 ? 's' : ''}` : undefined}>
-        <FilterToolbar
-          showPeriod={false}
-          preset={preset}
-          customFrom={customFrom}
-          customTo={customTo}
-          onPresetChange={changePreset}
-          onFromChange={(value) => { setCustomFrom(value); setPage(1); }}
-          onToChange={(value) => { setCustomTo(value); setPage(1); }}
-          statusFilter={statusFilter}
-          statusOptions={USER_STATUS_FILTERS}
-          onStatusChange={changeStatusFilter}
-        />
+          <div className="users-status-tabs" role="tablist" aria-label="Filtrer par statut">
+            {USER_STATUS_FILTERS.map((item) => (
+              <button
+                key={item.value || 'all'}
+                type="button"
+                role="tab"
+                aria-selected={statusFilter === item.value}
+                className={`users-status-tab ${statusFilter === item.value ? 'is-active' : ''}`}
+                onClick={() => changeStatusFilter(item.value)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-        <SearchBar
-          value={search}
-          onChange={(value) => { setSearch(value); setPage(1); }}
-          placeholder="Rechercher par nom ou numéro…"
-        />
+        <p className="users-list-meta muted">
+          {total} client{total > 1 ? 's' : ''}
+          {search.trim() ? ` · recherche « ${search.trim()} »` : ''}
+        </p>
 
         <EmptyState
           loading={listQuery.loading && rows.length === 0}
@@ -206,78 +252,62 @@ export default function UsersPage() {
         />
 
         {!listQuery.loading || rows.length > 0 ? (
-          <>
-            <div className="orders-table-wrap">
-              <table className="orders-table">
-                <thead>
-                  <tr>
-                    <th>Inscription</th>
-                    <th>Nom</th>
-                    <th>Téléphone</th>
-                    <th>Statut</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.id}>
-                      <td>
-                        {new Date(row.createdAt).toLocaleString('fr-FR', {
-                          dateStyle: 'short',
-                          timeStyle: 'short',
-                        })}
-                      </td>
-                      <td>
-                        <strong>{row.firstName} {row.lastName}</strong>
-                      </td>
-                      <td>{row.phone}</td>
-                      <td>
-                        <span className={`badge badge--${userStatusClass(row)}`}>
-                          {userStatusLabel(row)}
-                        </span>
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className={`btn btn-sm ${row.isBlocked ? 'secondary' : 'danger'}`}
-                          disabled={togglingId === row.id}
-                          onClick={() => toggleBlocked(row)}
-                        >
-                          {row.isBlocked ? 'Débloquer' : 'Bloquer'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <ul className="users-list">
+            {rows.map((row) => (
+              <li key={row.id} className={`users-row ${row.isBlocked ? 'users-row--blocked' : ''}`}>
+                <div className="users-row-avatar" aria-hidden>
+                  {userInitials(row)}
+                </div>
 
-            {pageInfo && pageInfo.totalPages > 1 ? (
-              <div className="pagination-bar">
-                <button
-                  type="button"
-                  className="btn secondary btn-sm"
-                  disabled={!pageInfo.hasPreviousPage}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  Précédent
-                </button>
-                <span className="muted">
-                  Page {pageInfo.currentPage} / {pageInfo.totalPages}
-                </span>
-                <button
-                  type="button"
-                  className="btn secondary btn-sm"
-                  disabled={!pageInfo.hasNextPage}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Suivant
-                </button>
-              </div>
-            ) : null}
-          </>
+                <div className="users-row-main">
+                  <div className="users-row-head">
+                    <strong>{userDisplayName(row)}</strong>
+                    <span className={`users-status-pill users-status-pill--${userStatusClass(row)}`}>
+                      {userStatusLabel(row)}
+                    </span>
+                  </div>
+                  <p className="users-row-phone">
+                    <Phone size={13} aria-hidden />
+                    {row.phone}
+                  </p>
+                  <p className="users-row-meta muted">Inscrit le {formatJoined(row.createdAt)}</p>
+                </div>
+
+                <div className="users-row-action">
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${row.isBlocked ? '' : 'secondary'}`}
+                    disabled={togglingId === row.id}
+                    onClick={() => toggleBlocked(row)}
+                  >
+                    {row.isBlocked ? (
+                      <>
+                        <ShieldCheck size={14} aria-hidden />
+                        Débloquer
+                      </>
+                    ) : (
+                      <>
+                        <ShieldBan size={14} aria-hidden />
+                        Bloquer
+                      </>
+                    )}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
         ) : null}
-      </SectionCard>
-    </>
+
+        {pageInfo ? (
+          <PaginationBar
+            className="users-pagination"
+            pageInfo={pageInfo}
+            pageSize={PAGE_SIZE}
+            loading={listQuery.loading}
+            onPageChange={setPage}
+          />
+        ) : null}
+      </div>
+    </div>
   );
 }

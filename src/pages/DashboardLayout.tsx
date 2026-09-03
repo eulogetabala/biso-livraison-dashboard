@@ -4,25 +4,30 @@ import {
   Bike,
   ClipboardList,
   Globe,
+  Handshake,
   Image,
   LayoutDashboard,
   MapPin,
   Package,
   ShoppingBag,
   ShoppingCart,
+  Star,
   Tags,
   Users,
   UtensilsCrossed,
   Wallet,
 } from 'lucide-react';
+import ApiTargetBadge from '../components/ApiTargetBadge';
 import { useAuth } from '../auth';
 import { EPICERIE_LABELS } from '../lib/constants';
+import { canAccessPath, filterByRole, isPartner, roleLabel } from '../lib/roles';
 import logo from '../../assets/logo.png';
 
 type NavItem = {
   to: string;
   label: string;
   icon: LucideIcon;
+  adminOnly?: boolean;
 };
 
 type NavGroup = {
@@ -39,11 +44,13 @@ const NAV: NavGroup[] = [
     section: 'Opérations',
     items: [
       { to: '/orders', label: 'Commandes', icon: ShoppingBag },
-      { to: '/parcels', label: 'Colis', icon: Package },
-      { to: '/tracking', label: 'Suivi livraisons', icon: MapPin },
+      { to: '/parcels', label: 'Colis', icon: Package, adminOnly: true },
+      { to: '/tracking', label: 'Suivi livraisons', icon: MapPin, adminOnly: true },
       { to: '/revenue', label: 'Revenus', icon: Wallet },
-      { to: '/drivers', label: 'Livreurs', icon: Bike },
-      { to: '/users', label: 'Utilisateurs', icon: Users },
+      { to: '/drivers', label: 'Livreurs', icon: Bike, adminOnly: true },
+      { to: '/partners', label: 'Partenaires', icon: Handshake, adminOnly: true },
+      { to: '/users', label: 'Utilisateurs', icon: Users, adminOnly: true },
+      { to: '/reviews', label: 'Avis clients', icon: Star, adminOnly: true },
     ],
   },
   {
@@ -51,15 +58,15 @@ const NAV: NavGroup[] = [
     items: [
       { to: '/restaurants', label: 'Restaurants', icon: UtensilsCrossed },
       { to: '/menus', label: 'Menus restaurant', icon: ClipboardList },
-      { to: '/simple-products', label: 'Produits simples', icon: ShoppingCart },
-      { to: '/categories', label: EPICERIE_LABELS.navCategories, icon: Tags },
+      { to: '/simple-products', label: 'Produits simples', icon: ShoppingCart, adminOnly: true },
+      { to: '/categories', label: EPICERIE_LABELS.navCategories, icon: Tags, adminOnly: true },
     ],
   },
   {
     section: 'Accueil app',
     items: [
-      { to: '/banners', label: 'Bannières slider', icon: Image },
-      { to: '/cuisines', label: 'Types de cuisine', icon: Globe },
+      { to: '/banners', label: 'Bannières slider', icon: Image, adminOnly: true },
+      { to: '/cuisines', label: 'Types de cuisine', icon: Globe, adminOnly: true },
     ],
   },
 ];
@@ -71,7 +78,9 @@ const PAGE_TITLES: Record<string, string> = {
   '/tracking': 'Suivi livraisons',
   '/revenue': 'Revenus',
   '/drivers': 'Livreurs',
+  '/partners': 'Partenaires',
   '/users': 'Utilisateurs',
+  '/reviews': 'Avis clients',
   '/restaurants': 'Restaurants',
   '/menus': 'Menus',
   '/simple-products': 'Produits',
@@ -86,7 +95,15 @@ export default function DashboardLayout() {
 
   if (!token) return <Navigate to="/login" replace />;
 
+  if (user && !canAccessPath(user.role, location.pathname)) {
+    return <Navigate to="/" replace />;
+  }
+
   const pageTitle = location.pathname === '/' ? '' : (PAGE_TITLES[location.pathname] ?? 'Manager');
+  const navGroups = NAV.map((group) => ({
+    ...group,
+    items: filterByRole(group.items, user?.role),
+  })).filter((group) => group.items.length > 0);
 
   return (
     <div className="app-shell">
@@ -96,11 +113,14 @@ export default function DashboardLayout() {
           <div>
             <p className="sidebar-brand-label">Biso Manager</p>
             <p className="sidebar-user">{user?.firstName} {user?.lastName}</p>
+            {user?.role ? (
+              <p className="sidebar-role">{roleLabel(user.role)}</p>
+            ) : null}
           </div>
         </div>
 
         <nav>
-          {NAV.map((group) => (
+          {navGroups.map((group) => (
             <div key={group.section} className="nav-group">
               <p className="nav-section">{group.section}</p>
               {group.items.map((item) => {
@@ -117,6 +137,14 @@ export default function DashboardLayout() {
             </div>
           ))}
         </nav>
+
+        {isPartner(user?.role) ? (
+          <p className="sidebar-partner-hint muted">
+            Espace limité à votre restaurant.
+          </p>
+        ) : null}
+
+        <ApiTargetBadge />
 
         <button type="button" className="btn secondary sidebar-logout" onClick={logout}>
           Déconnexion

@@ -8,7 +8,7 @@ type Props = {
   cuisines: CuisineOption[];
   selected: string[];
   onChange: (selected: string[]) => void;
-  onCuisinesUpdated: () => void;
+  onCuisinesUpdated?: () => void;
 };
 
 function slugValue(label: string): string {
@@ -63,7 +63,7 @@ export default function CuisineTypePicker({
           },
         },
       });
-      onCuisinesUpdated();
+      onCuisinesUpdated?.();
       if (!selected.includes(value)) {
         onChange([...selected, value]);
       }

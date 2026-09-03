@@ -8,10 +8,12 @@ import FormSection from '../components/FormSection';
 import ModalFormFooter from '../components/ModalFormFooter';
 import SearchBar from '../components/SearchBar';
 import EmptyState from '../components/EmptyState';
+import PaginationBar from '../components/PaginationBar';
 import RestaurantBrandingUpload from '../components/RestaurantBrandingUpload';
 import CuisineTypePicker from '../components/CuisineTypePicker';
 import {
   CREATE_RESTAURANT,
+  ACTIVE_CUISINES_QUERY,
   CUISINES_QUERY,
   DELETE_RESTAURANT,
   RESTAURANTS_QUERY,
@@ -23,12 +25,21 @@ import { RESTAURANT_TYPES, EPICERIE_LABELS } from '../lib/constants';
 import { formatCuisineTypes, parseCuisineTypes, serializeCuisineTypes } from '../lib/cuisine-types';
 import { apolloErrorMessage } from '../lib/apollo-error';
 import { assetUrl } from '../lib/api';
+import { useAuth } from '../auth';
+import { isAdmin, isPartner } from '../lib/roles';
+import { PAGE_SIZE, paginateList } from '../lib/pagination';
 
 const FORM_ID = 'restaurant-form';
 
 export default function RestaurantsPage() {
+  const { user } = useAuth();
+  const adminUser = isAdmin(user?.role);
+  const partnerUser = isPartner(user?.role);
+
   const { data, loading, refetch } = useQuery(RESTAURANTS_QUERY);
-  const { data: cuisinesData, refetch: refetchCuisines } = useQuery(CUISINES_QUERY);
+  const { data: cuisinesData, refetch: refetchCuisines } = useQuery(
+    adminUser ? CUISINES_QUERY : ACTIVE_CUISINES_QUERY,
+  );
   const [createRestaurant] = useMutation(CREATE_RESTAURANT);
   const [updateRestaurant] = useMutation(UPDATE_RESTAURANT);
   const [deleteRestaurant] = useMutation(DELETE_RESTAURANT);
@@ -40,10 +51,14 @@ export default function RestaurantsPage() {
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState('');
   const [openFilter, setOpenFilter] = useState<'all' | 'open' | 'closed'>('all');
+  const [page, setPage] = useState(1);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
-  const rows: RestaurantRow[] = data?.searchRestaurants?.items ?? [];
-  const cuisines = (cuisinesData?.allCuisineTypes ?? []).filter((c: { isActive: boolean }) => c.isActive);
+  const rows: RestaurantRow[] = data?.restaurants?.items ?? [];
+  const rawCuisines = adminUser
+    ? (cuisinesData?.allCuisineTypes ?? [])
+    : (cuisinesData?.activeCuisineTypes ?? []);
+  const cuisines = rawCuisines.filter((c: { isActive: boolean }) => c.isActive);
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -58,6 +73,18 @@ export default function RestaurantsPage() {
       );
     });
   }, [rows, filter, openFilter]);
+
+  const paginated = useMemo(() => paginateList(filtered, page), [filtered, page]);
+
+  function changeFilter(value: string) {
+    setFilter(value);
+    setPage(1);
+  }
+
+  function changeOpenFilter(value: 'all' | 'open' | 'closed') {
+    setOpenFilter(value);
+    setPage(1);
+  }
 
   function openCreate() {
     setForm(emptyRestaurantForm());
@@ -98,13 +125,17 @@ export default function RestaurantsPage() {
         coverImageUrl: form.coverImageUrl || undefined,
         deliveryFee: Number(form.deliveryFee),
         estimatedDeliveryTime: Number(form.estimatedDeliveryTime),
-        rating: Number(form.rating),
         latitude: form.latitude != null ? Number(form.latitude) : undefined,
         longitude: form.longitude != null ? Number(form.longitude) : undefined,
-        type: form.type ?? 'RESTAURANT',
         isActive: !!form.isActive,
-        isFeatured: !!form.isFeatured,
-        sortOrder: Number(form.sortOrder ?? 0),
+        ...(adminUser
+          ? {
+              rating: Number(form.rating),
+              type: form.type ?? 'RESTAURANT',
+              isFeatured: !!form.isFeatured,
+              sortOrder: Number(form.sortOrder ?? 0),
+            }
+          : {}),
       };
 
       if (form.id) {
@@ -149,12 +180,18 @@ export default function RestaurantsPage() {
     <div className="page-content">
       <PageHeader
         title="Restaurants"
-        subtitle="Identité visuelle : photo de couverture + logo. Les infos correspondent à la fiche restaurant dans l'app."
+        subtitle={
+          partnerUser
+            ? 'Modifiez la fiche et l’identité visuelle de votre établissement.'
+            : 'Identité visuelle : photo de couverture + logo. Les infos correspondent à la fiche restaurant dans l\'app.'
+        }
         badge={filtered.length}
         action={
-          <button type="button" className="btn" onClick={openCreate}>
-            + Nouveau restaurant
-          </button>
+          adminUser ? (
+            <button type="button" className="btn" onClick={openCreate}>
+              + Nouveau restaurant
+            </button>
+          ) : undefined
         }
       />
 
@@ -169,7 +206,7 @@ export default function RestaurantsPage() {
               key={tab.value}
               type="button"
               className={openFilter === tab.value ? 'active' : ''}
-              onClick={() => setOpenFilter(tab.value)}
+              onClick={() => changeOpenFilter(tab.value)}
             >
               {tab.label}
             </button>
@@ -177,7 +214,7 @@ export default function RestaurantsPage() {
         </div>
         <SearchBar
           value={filter}
-          onChange={setFilter}
+          onChange={changeFilter}
           placeholder="Rechercher par nom, ville ou cuisine…"
         />
       </SectionCard>
@@ -190,8 +227,9 @@ export default function RestaurantsPage() {
       />
 
       {!loading || rows.length > 0 ? (
+        <>
         <div className="entity-grid entity-grid--restaurants">
-          {filtered.map((row) => (
+          {paginated.items.map((row) => (
             <article key={row.id} className={`entity-card restaurant-card ${row.isActive ? '' : 'restaurant-card--closed'}`.trim()}>
               <div
                 className="restaurant-card-cover"
@@ -232,15 +270,24 @@ export default function RestaurantsPage() {
                     <button type="button" className="btn secondary btn-sm" onClick={() => openEdit(row)}>
                       Modifier
                     </button>
-                    <button type="button" className="btn danger btn-sm" onClick={() => onDelete(row)}>
-                      Supprimer
-                    </button>
+                    {adminUser ? (
+                      <button type="button" className="btn danger btn-sm" onClick={() => onDelete(row)}>
+                        Supprimer
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </div>
             </article>
           ))}
         </div>
+        <PaginationBar
+          pageInfo={paginated.pageInfo}
+          pageSize={PAGE_SIZE}
+          loading={loading}
+          onPageChange={setPage}
+        />
+        </>
       ) : null}
 
       <Modal
@@ -274,13 +321,15 @@ export default function RestaurantsPage() {
               <Field label="Nom" required>
                 <input value={form.name} onChange={(e) => patchForm({ name: e.target.value })} required />
               </Field>
-              <Field label="Type d'établissement" hint={EPICERIE_LABELS.typeHint}>
-                <select value={form.type ?? 'RESTAURANT'} onChange={(e) => patchForm({ type: e.target.value })}>
-                  {RESTAURANT_TYPES.map((type) => (
-                    <option key={type.value} value={type.value}>{type.label}</option>
-                  ))}
-                </select>
-              </Field>
+              {adminUser ? (
+                <Field label="Type d'établissement" hint={EPICERIE_LABELS.typeHint}>
+                  <select value={form.type ?? 'RESTAURANT'} onChange={(e) => patchForm({ type: e.target.value })}>
+                    {RESTAURANT_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
+                  </select>
+                </Field>
+              ) : null}
               <div className="form-span-2">
                 <Field label="Description">
                   <textarea rows={3} value={form.description ?? ''} onChange={(e) => patchForm({ description: e.target.value })} />
@@ -292,7 +341,7 @@ export default function RestaurantsPage() {
                     cuisines={cuisines}
                     selected={selectedCuisines}
                     onChange={setSelectedCuisines}
-                    onCuisinesUpdated={() => refetchCuisines()}
+                    onCuisinesUpdated={adminUser ? () => refetchCuisines() : undefined}
                   />
                 </Field>
               </div>
@@ -324,12 +373,16 @@ export default function RestaurantsPage() {
               <Field label="Temps estimé (min)">
                 <input type="number" min={5} max={180} value={form.estimatedDeliveryTime} onChange={(e) => patchForm({ estimatedDeliveryTime: Number(e.target.value) })} />
               </Field>
-              <Field label="Note (0–5)">
-                <input type="number" min={0} max={5} step={0.1} value={form.rating} onChange={(e) => patchForm({ rating: Number(e.target.value) })} />
-              </Field>
-              <Field label="Ordre d'affichage">
-                <input type="number" value={form.sortOrder ?? 0} onChange={(e) => patchForm({ sortOrder: Number(e.target.value) })} />
-              </Field>
+              {adminUser ? (
+                <>
+                  <Field label="Note (0–5)">
+                    <input type="number" min={0} max={5} step={0.1} value={form.rating} onChange={(e) => patchForm({ rating: Number(e.target.value) })} />
+                  </Field>
+                  <Field label="Ordre d'affichage">
+                    <input type="number" value={form.sortOrder ?? 0} onChange={(e) => patchForm({ sortOrder: Number(e.target.value) })} />
+                  </Field>
+                </>
+              ) : null}
               <Field label="Latitude">
                 <input type="number" step="any" value={form.latitude ?? ''} onChange={(e) => patchForm({ latitude: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </Field>
@@ -341,10 +394,12 @@ export default function RestaurantsPage() {
                   <input type="checkbox" checked={!!form.isActive} onChange={(e) => patchForm({ isActive: e.target.checked })} />
                   Restaurant ouvert — visible et commandable dans l’app
                 </label>
-                <label className="checkbox">
-                  <input type="checkbox" checked={!!form.isFeatured} onChange={(e) => patchForm({ isFeatured: e.target.checked })} />
-                  Mis en avant sur l'accueil
-                </label>
+                {adminUser ? (
+                  <label className="checkbox">
+                    <input type="checkbox" checked={!!form.isFeatured} onChange={(e) => patchForm({ isFeatured: e.target.checked })} />
+                    Mis en avant sur l'accueil
+                  </label>
+                ) : null}
               </div>
             </div>
           </FormSection>
