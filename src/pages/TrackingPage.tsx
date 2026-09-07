@@ -13,7 +13,7 @@ import {
   type ActiveDeliveryTracking,
 } from '../graphql/tracking';
 
-const POLL_MS = 5000;
+const POLL_MS = 3000;
 
 export default function TrackingPage() {
   const [searchParams] = useSearchParams();
@@ -70,7 +70,7 @@ export default function TrackingPage() {
     <>
       <PageHeader
         title="Suivi livraisons"
-        subtitle="Carte OpenStreetMap en direct — actualisation automatique toutes les 5 s."
+        subtitle="Carte OpenStreetMap en direct — actualisation automatique toutes les 3 s."
         badge={rows.length}
         action={
           <div className="tracking-header-actions">
