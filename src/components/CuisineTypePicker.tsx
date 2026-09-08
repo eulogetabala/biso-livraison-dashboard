@@ -2,7 +2,8 @@ import { FormEvent, useState } from 'react';
 import { useMutation } from '@apollo/client';
 import { UPSERT_CUISINE } from '../graphql/admin';
 import { apolloErrorMessage } from '../lib/apollo-error';
-import type { CuisineOption } from '../lib/cuisine-types';
+import { slugCuisineValue, type CuisineOption } from '../lib/cuisine-types';
+import { assetUrl } from '../lib/api';
 
 type Props = {
   cuisines: CuisineOption[];
@@ -10,15 +11,6 @@ type Props = {
   onChange: (selected: string[]) => void;
   onCuisinesUpdated?: () => void;
 };
-
-function slugValue(label: string): string {
-  return label
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_|_$/g, '');
-}
 
 export default function CuisineTypePicker({
   cuisines,
@@ -29,7 +21,6 @@ export default function CuisineTypePicker({
   const [upsertCuisine] = useMutation(UPSERT_CUISINE);
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
-  const [newEmoji, setNewEmoji] = useState('🍽️');
   const [addError, setAddError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -49,7 +40,7 @@ export default function CuisineTypePicker({
 
     setSaving(true);
     setAddError('');
-    const value = slugValue(label);
+    const value = slugCuisineValue(label);
 
     try {
       await upsertCuisine({
@@ -57,7 +48,6 @@ export default function CuisineTypePicker({
           input: {
             value,
             label,
-            emoji: newEmoji.trim() || undefined,
             sortOrder: cuisines.length + 1,
             isActive: true,
           },
@@ -68,7 +58,6 @@ export default function CuisineTypePicker({
         onChange([...selected, value]);
       }
       setNewLabel('');
-      setNewEmoji('🍽️');
       setAdding(false);
     } catch (err) {
       setAddError(apolloErrorMessage(err));
@@ -89,7 +78,11 @@ export default function CuisineTypePicker({
               className={`cuisine-chip ${active ? 'active' : ''}`}
               onClick={() => toggle(cuisine.value)}
             >
-              {cuisine.emoji ? <span className="cuisine-chip-emoji">{cuisine.emoji}</span> : null}
+              {cuisine.iconUrl ? (
+                <span className="cuisine-chip-icon">
+                  <img src={assetUrl(cuisine.iconUrl)} alt="" />
+                </span>
+              ) : null}
               <span>{cuisine.label}</span>
               {active ? <span className="cuisine-chip-check">✓</span> : null}
             </button>
@@ -117,13 +110,6 @@ export default function CuisineTypePicker({
             onChange={(e) => setNewLabel(e.target.value)}
             required
           />
-          <input
-            className="cuisine-emoji-input"
-            placeholder="🍽️"
-            value={newEmoji}
-            onChange={(e) => setNewEmoji(e.target.value)}
-            maxLength={4}
-          />
           <button type="submit" className="btn btn-sm" disabled={saving}>
             {saving ? '…' : 'Créer'}
           </button>
@@ -137,6 +123,9 @@ export default function CuisineTypePicker({
           >
             Annuler
           </button>
+          <p className="field-hint form-span-2">
+            Ajoutez l&apos;icône depuis la rubrique <strong>Types de cuisine</strong>.
+          </p>
           {addError ? <p className="field-error form-span-2">{addError}</p> : null}
         </form>
       )}

@@ -2,7 +2,17 @@ export type CuisineOption = {
   value: string;
   label: string;
   emoji?: string | null;
+  iconUrl?: string | null;
 };
+
+export function slugCuisineValue(label: string): string {
+  return label
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
+}
 
 export function parseCuisineTypes(raw?: string | null): string[] {
   if (!raw?.trim()) return [];
@@ -18,8 +28,7 @@ export function formatCuisineTypes(raw: string, cuisines: CuisineOption[]): stri
   return parseCuisineTypes(raw)
     .map((value) => {
       const match = map.get(value.toUpperCase());
-      if (!match) return value;
-      return match.emoji ? `${match.emoji} ${match.label}` : match.label;
+      return match?.label ?? value;
     })
     .join(' · ');
 }

@@ -885,18 +885,32 @@ textarea {
   opacity: 0.55;
 }
 
-.cuisine-card-emoji {
-  font-size: 36px;
-  line-height: 1;
+.cuisine-card-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto;
+  border-radius: 14px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.cuisine-card-icon img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.cuisine-card-icon-fallback {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--navy-soft);
 }
 
 .cuisine-card-body {
   margin-top: 10px;
-}
-
-.cuisine-card-code {
-  display: inline-block;
-  margin-top: 6px;
 }
 
 .banner-card-hero {
@@ -1028,8 +1042,24 @@ textarea {
   box-shadow: 0 4px 14px var(--orange-glow);
 }
 
-.cuisine-chip-emoji {
-  font-size: 15px;
+.cuisine-chip-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.85);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.cuisine-chip-icon img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.cuisine-chip.active .cuisine-chip-icon {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .cuisine-chip-check {
@@ -1043,17 +1073,13 @@ textarea {
 
 .cuisine-add-form {
   display: grid;
-  grid-template-columns: 1fr 56px auto auto;
+  grid-template-columns: 1fr auto auto;
   gap: 8px;
   align-items: center;
   padding: 12px;
   background: #f8fafd;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
-}
-
-.cuisine-emoji-input {
-  text-align: center;
 }
 
 .cuisine-add-toggle {

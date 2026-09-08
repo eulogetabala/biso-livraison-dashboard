@@ -46,6 +46,8 @@ export const ACTIVE_CUISINES_QUERY = gql`
       value
       label
       emoji
+      iconUrl
+      sortOrder
       isActive
     }
   }
@@ -58,6 +60,8 @@ export const CUISINES_QUERY = gql`
       value
       label
       emoji
+      iconUrl
+      sortOrder
       isActive
     }
   }
