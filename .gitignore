@@ -1,0 +1,25 @@
+# Dépendances
+node_modules/
+
+# Sortie de build — NE PAS décommenter sans confirmation.
+# Netlify sert peut-être le dist/ versionné directement (les fichiers ont des noms
+# hachés par Vite : un dist/ partiellement ignoré casserait le site). Vérifier la
+# configuration Netlify avant de l'ajouter ici et de désindexer dist/.
+# dist/
+
+# Configuration locale — ne jamais committer (.env.example fait foi)
+.env
+.env*.local
+!.env.example
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# macOS
+.DS_Store
+*.pem
