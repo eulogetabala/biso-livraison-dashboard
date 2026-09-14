@@ -7,6 +7,8 @@ import { useAuth } from '../auth';
 import {
   DAILY_ORDERS_QUERY,
   STATISTICS_OVERVIEW_QUERY,
+  type DailyOrderPoint,
+  type StatisticsOverview,
 } from '../graphql/statistics';
 import { ACTIVE_DELIVERIES_TRACKING_QUERY } from '../graphql/tracking';
 import { formatFcfa, lastNDaysRange } from '../lib/format';
@@ -30,11 +32,14 @@ export default function HomePage() {
   const showTracking = isAdmin(user?.role) && canAccessPath(user?.role, '/tracking');
   const adminView = isAdmin(user?.role);
 
-  const overviewQuery = useQuery(STATISTICS_OVERVIEW_QUERY, {
-    variables: { range },
-    fetchPolicy: 'network-only',
-  });
-  const dailyQuery = useQuery(DAILY_ORDERS_QUERY, {
+  const overviewQuery = useQuery<{ statisticsOverview: StatisticsOverview | null }>(
+    STATISTICS_OVERVIEW_QUERY,
+    {
+      variables: { range },
+      fetchPolicy: 'network-only',
+    },
+  );
+  const dailyQuery = useQuery<{ dailyOrders: DailyOrderPoint[] }>(DAILY_ORDERS_QUERY, {
     variables: { range },
     fetchPolicy: 'network-only',
   });
@@ -58,11 +63,19 @@ export default function HomePage() {
     month: 'long',
   });
 
-  const sparkline = useMemo(() => {
+  /**
+   * Type explicite : sans lui, `return []` infère `never[]` et `sparkline`
+   * devient une union de tableaux, ce qui rend le paramètre du `.map()`
+   * implicitement `any` côté rendu.
+   */
+  const sparkline = useMemo<Array<{ date: string; height: number }>>(() => {
     const slice = daily.slice(-7);
     if (slice.length === 0) return [];
     const peak = Math.max(...slice.map((p) => p.revenue), 1);
-    return slice.map((p) => ({ ...p, height: Math.max(12, Math.round((p.revenue / peak) * 100)) }));
+    return slice.map((p) => ({
+      date: p.date,
+      height: Math.max(12, Math.round((p.revenue / peak) * 100)),
+    }));
   }, [daily]);
 
   const pendingOrders = overview?.pendingOrders ?? 0;
