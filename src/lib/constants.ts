@@ -2,14 +2,26 @@ export const RESTAURANT_MENU_SECTIONS = [
   { key: 'repas', label: 'Repas', categories: ['MAIN_COURSE'] },
   { key: 'dejeuner', label: 'Déjeuner', categories: ['LUNCH'] },
   { key: 'entrees', label: 'Entrées', categories: ['APPETIZER'] },
+  { key: 'accompagnements', label: 'Accompagnements', categories: ['SIDE'] },
   { key: 'boissons', label: 'Boissons', categories: ['DRINK'] },
   { key: 'desserts', label: 'Desserts', categories: ['DESSERT'] },
   { key: 'fruits', label: 'Fruits', categories: ['FRUIT'] },
   { key: 'snacks', label: 'Snacks', categories: ['SNACK'] },
 ] as const;
 
-export const RESTAURANT_TYPES = [
-  { value: 'RESTAURANT', label: 'Restaurant (repas)' },
+/** Compléments proposés en un clic lors de la création d'un plat. */
+export const COMMON_SUPPLEMENTS = [
+  'Riz',
+  'Banane',
+  'Ketchup',
+  'Attiéké',
+  'Frites',
+  'Igname',
+  'Manioc',
+  'Haricots',
+  'Sauce piquante',
+  'Mayonnaise',
+  'Boisson',
 ] as const;
 
 /** Libellés affichés dans le dashboard — le code technique reste MARKET côté API. */
@@ -24,12 +36,10 @@ export const EPICERIE_LABELS = {
   fieldCategory: 'Catégorie produit',
   fieldCategoryHint: "Affichée sur l'accueil et l'écran Catégories de l'app.",
   menusSubtitle:
-    'Plats par restaurant, regroupés par libellé (Déjeuner, Repas, Boisson…). Les suppléments se gèrent plat par plat.',
+    'Plats, boissons et accompagnements par restaurant, regroupés par libellé. Les compléments (riz, banane, ketchup…) se gèrent élément par élément.',
   simpleProductsSubtitle:
     'Produits vendus par des particuliers (pain maison, fruits…) — sans lien avec un restaurant.',
   typeBadge: '(Épicerie)',
-  typeHint:
-    "Choisis « Restaurant » pour un resto classique, « Épicerie / Produits » pour le catalogue courses (pain, fruits, épicerie…).",
 } as const;
 
 export function isEpicerieType(type?: string | null): boolean {
@@ -51,6 +61,17 @@ export const MENU_ITEM_CATEGORIES = [
   { value: 'LUNCH', label: 'Déjeuner' },
   { value: 'FRUIT', label: 'Fruit' },
 ] as const;
+
+/**
+ * Catégories pour lesquelles les compléments (riz, banane, ketchup…) ont du sens :
+ * « Repas » / « Plat principal » (MAIN_COURSE) et « Déjeuner » (LUNCH).
+ * Les boissons, desserts, fruits, entrées, snacks et accompagnements n'en proposent pas.
+ */
+export const SUPPLEMENT_CATEGORIES = ['MAIN_COURSE', 'LUNCH'] as const;
+
+export function categorySupportsSupplements(category?: string | null): boolean {
+  return (SUPPLEMENT_CATEGORIES as readonly string[]).includes(category ?? '');
+}
 
 export const BANNER_LINK_TYPES = [
   { value: 'RESTAURANTS', label: 'Liste restaurants' },

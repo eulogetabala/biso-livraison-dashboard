@@ -21,7 +21,7 @@ import {
   emptyRestaurantForm,
   type RestaurantRow,
 } from '../graphql/admin';
-import { RESTAURANT_TYPES, EPICERIE_LABELS } from '../lib/constants';
+import { isEpicerieType } from '../lib/constants';
 import { formatCuisineTypes, parseCuisineTypes, serializeCuisineTypes } from '../lib/cuisine-types';
 import { apolloErrorMessage } from '../lib/apollo-error';
 import { assetUrl } from '../lib/api';
@@ -54,7 +54,9 @@ export default function RestaurantsPage() {
   const [page, setPage] = useState(1);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
-  const rows: RestaurantRow[] = data?.restaurants?.items ?? [];
+  const rows: RestaurantRow[] = (data?.restaurants?.items ?? []).filter(
+    (row: RestaurantRow) => !isEpicerieType(row.type),
+  );
   const rawCuisines = adminUser
     ? (cuisinesData?.allCuisineTypes ?? [])
     : (cuisinesData?.activeCuisineTypes ?? []);
@@ -195,7 +197,7 @@ export default function RestaurantsPage() {
         }
       />
 
-      <SectionCard>
+      <SectionCard title="Établissements">
         <div className="status-filter-tabs">
           {[
             { value: 'all' as const, label: 'Tous' },
@@ -321,15 +323,6 @@ export default function RestaurantsPage() {
               <Field label="Nom" required>
                 <input value={form.name} onChange={(e) => patchForm({ name: e.target.value })} required />
               </Field>
-              {adminUser ? (
-                <Field label="Type d'établissement" hint={EPICERIE_LABELS.typeHint}>
-                  <select value={form.type ?? 'RESTAURANT'} onChange={(e) => patchForm({ type: e.target.value })}>
-                    {RESTAURANT_TYPES.map((type) => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </select>
-                </Field>
-              ) : null}
               <div className="form-span-2">
                 <Field label="Description">
                   <textarea rows={3} value={form.description ?? ''} onChange={(e) => patchForm({ description: e.target.value })} />

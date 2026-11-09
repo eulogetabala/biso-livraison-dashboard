@@ -16,12 +16,14 @@ import ParcelsPage from './pages/ParcelsPage';
 import CuisinesPage from './pages/CuisinesPage';
 import ReviewsPage from './pages/ReviewsPage';
 import PartnersPage from './pages/PartnersPage';
+import MapPreview from './pages/__MapPreview';
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/map-preview" element={<MapPreview />} />
         <Route element={<DashboardLayout />}>
           <Route index element={<HomePage />} />
           <Route path="orders" element={<OrdersPage />} />

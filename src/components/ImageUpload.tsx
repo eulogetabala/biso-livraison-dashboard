@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useAuth } from '../auth';
-import { assetUrl, uploadImage } from '../lib/api';
+import { assetUrl, UPLOAD_ACCEPT, uploadImage } from '../lib/api';
 import Field from './Field';
 
 type Variant = 'default' | 'cover' | 'logo' | 'banner' | 'product';
@@ -19,7 +19,7 @@ export default function ImageUpload({
   hint,
   value,
   onChange,
-  accept = 'image/png,image/jpeg,image/webp,image/svg+xml',
+  accept = UPLOAD_ACCEPT,
   variant = 'default',
 }: Props) {
   const { token } = useAuth();

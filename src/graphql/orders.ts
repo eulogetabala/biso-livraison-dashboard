@@ -54,6 +54,29 @@ export const ORDERS_QUERY = gql`
   }
 `;
 
+export const HOME_RECENT_ORDERS_QUERY = gql`
+  query HomeRecentOrders {
+    orders(page: 1, limit: 6) {
+      items {
+        id
+        status
+        total
+        grandTotal
+        createdAt
+        restaurant {
+          id
+          name
+        }
+        user {
+          id
+          firstName
+          lastName
+        }
+      }
+    }
+  }
+`;
+
 export const UPDATE_ORDER_STATUS = gql`
   mutation UpdateOrderStatus($input: UpdateOrderStatusInput!) {
     updateOrderStatus(input: $input) {
@@ -101,6 +124,16 @@ export const ASSIGN_AVAILABLE_DRIVER = gql`
     }
   }
 `;
+
+export type HomeRecentOrder = {
+  id: string;
+  status: string;
+  total: number;
+  grandTotal: number;
+  createdAt: string;
+  restaurant?: { id: string; name: string } | null;
+  user?: { id: string; firstName: string; lastName: string } | null;
+};
 
 export type OrderItemRow = {
   quantity: number;

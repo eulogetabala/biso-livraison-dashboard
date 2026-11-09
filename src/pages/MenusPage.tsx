@@ -22,9 +22,12 @@ import {
   type MenuSupplementRow,
 } from '../graphql/admin';
 import {
+  COMMON_SUPPLEMENTS,
   EPICERIE_LABELS,
   MENU_ITEM_CATEGORIES,
   RESTAURANT_MENU_SECTIONS,
+  categorySupportsSupplements,
+  isEpicerieType,
   menuCategoryLabel,
   sectionKeyForCategory,
 } from '../lib/constants';
@@ -41,8 +44,11 @@ export default function MenusPage() {
   const partnerUser = isPartner(user?.role);
 
   const { data: restaurantsData } = useQuery(RESTAURANTS_QUERY);
+  // On ne garde que les vrais restaurants : l'enregistrement « Biso Market »
+  // (type MARKET) est un conteneur technique de livraison pour l'épicerie,
+  // il ne porte pas de carte. Ses produits se gèrent dans « Produits simples ».
   const restaurants = (restaurantsData?.restaurants?.items ?? []).filter(
-    (r: { type?: string | null }) => r.type !== 'MARKET',
+    (r: { type?: string | null }) => !isEpicerieType(r.type),
   );
 
   const [restaurantId, setRestaurantId] = useState('');
@@ -52,7 +58,7 @@ export default function MenusPage() {
       ? partnerRestaurantId
       : restaurantId || restaurants[0]?.id || '';
   const selectedRestaurant = restaurants.find((r: { id: string }) => r.id === selectedRestaurantId);
-  const [activeSection, setActiveSection] = useState(RESTAURANT_MENU_SECTIONS[0].key);
+  const [activeSection, setActiveSection] = useState<string>(RESTAURANT_MENU_SECTIONS[0].key);
   const [page, setPage] = useState(1);
 
   const { data, loading, refetch } = useQuery(MENU_ITEMS_QUERY, {
@@ -70,20 +76,13 @@ export default function MenusPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<Partial<MenuItemRow>>({});
   const [supplementDraft, setSupplementDraft] = useState<Partial<MenuSupplementRow>>({});
+  const [pendingSupplements, setPendingSupplements] = useState<{ name: string; price: number }[]>([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [supplementSaving, setSupplementSaving] = useState(false);
 
   const items: MenuItemRow[] = data?.searchMenuItems?.items ?? [];
   const section = RESTAURANT_MENU_SECTIONS.find((s) => s.key === activeSection) ?? RESTAURANT_MENU_SECTIONS[0];
-
-  const sectionCategoryOptions = useMemo(
-    () =>
-      MENU_ITEM_CATEGORIES.filter((cat) =>
-        (section.categories as readonly string[]).includes(cat.value),
-      ),
-    [section],
-  );
 
   const filteredItems = useMemo(
     () =>
@@ -94,6 +93,9 @@ export default function MenusPage() {
   );
 
   const paginated = useMemo(() => paginateList(filteredItems, page), [filteredItems, page]);
+
+  // Les compléments ne concernent que les repas : plat principal / déjeuner.
+  const supplementsEnabled = categorySupportsSupplements(form.category);
 
   const sectionCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -111,6 +113,7 @@ export default function MenusPage() {
     const defaultCategory = section.categories[0] ?? 'MAIN_COURSE';
     setForm({ ...emptyMenuForm(selectedRestaurantId), category: defaultCategory });
     setSupplementDraft({});
+    setPendingSupplements([]);
     setError('');
     setModalOpen(true);
   }
@@ -119,6 +122,7 @@ export default function MenusPage() {
     setActiveSection(sectionKeyForCategory(row.category));
     setForm({ ...row, supplements: row.supplements ?? [] });
     setSupplementDraft({});
+    setPendingSupplements([]);
     setError('');
     setModalOpen(true);
   }
@@ -127,9 +131,18 @@ export default function MenusPage() {
     setForm((current) => ({ ...current, ...patch }));
   }
 
-  async function saveSupplement(menuItemId: string) {
-    if (!supplementDraft.name?.trim()) {
-      setError('Indiquez un nom pour le supplément.');
+  function changeCategory(category: string) {
+    patchForm({ category });
+    if (!categorySupportsSupplements(category)) {
+      setSupplementDraft({});
+      setPendingSupplements([]);
+    }
+  }
+
+  async function saveSupplement(menuItemId: string, overrides?: { name: string; price?: number }) {
+    const name = (overrides?.name ?? supplementDraft.name)?.trim();
+    if (!name) {
+      setError('Indiquez un nom pour le complément.');
       return;
     }
     setSupplementSaving(true);
@@ -138,12 +151,12 @@ export default function MenusPage() {
       await upsertSupplement({
         variables: {
           input: {
-            id: supplementDraft.id,
+            id: overrides ? undefined : supplementDraft.id,
             menuItemId,
-            name: supplementDraft.name.trim(),
-            price: Number(supplementDraft.price ?? 0),
+            name,
+            price: overrides?.price ?? Number(supplementDraft.price ?? 0),
             isAvailable: supplementDraft.isAvailable !== false,
-            sortOrder: Number(supplementDraft.sortOrder ?? 0),
+            sortOrder: overrides ? (form.supplements?.length ?? 0) : Number(supplementDraft.sortOrder ?? 0),
           },
         },
       });
@@ -158,8 +171,31 @@ export default function MenusPage() {
     }
   }
 
+  /** Ajoute un complément : appel API si le plat existe, sinon mise en attente. */
+  async function addSupplement() {
+    const name = supplementDraft.name?.trim();
+    if (!name) {
+      setError('Indiquez un nom pour le complément.');
+      return;
+    }
+
+    if (form.id) {
+      await saveSupplement(form.id);
+      return;
+    }
+
+    if (pendingSupplements.some((sup) => sup.name.toLowerCase() === name.toLowerCase())) {
+      setError(`« ${name} » est déjà ajouté.`);
+      return;
+    }
+
+    setPendingSupplements((list) => [...list, { name, price: Number(supplementDraft.price ?? 0) }]);
+    setSupplementDraft({});
+    setError('');
+  }
+
   async function removeSupplement(id: string, menuItemId: string) {
-    if (!window.confirm('Supprimer ce supplément ?')) return;
+    if (!window.confirm('Supprimer ce complément ?')) return;
     setSupplementSaving(true);
     setError('');
     try {
@@ -172,6 +208,35 @@ export default function MenusPage() {
     } finally {
       setSupplementSaving(false);
     }
+  }
+
+  function removePendingSupplement(index: number) {
+    setPendingSupplements((list) => list.filter((_, i) => i !== index));
+  }
+
+  function editPendingSupplement(index: number) {
+    const sup = pendingSupplements[index];
+    if (!sup) return;
+    setSupplementDraft({ name: sup.name, price: sup.price });
+    removePendingSupplement(index);
+  }
+
+  function quickAddSupplement(name: string) {
+    const alreadyAdded = form.id
+      ? (form.supplements ?? []).some((sup) => sup.name.toLowerCase() === name.toLowerCase())
+      : pendingSupplements.some((sup) => sup.name.toLowerCase() === name.toLowerCase());
+
+    if (alreadyAdded) {
+      setError(`« ${name} » est déjà ajouté.`);
+      return;
+    }
+
+    setError('');
+    if (form.id) {
+      void saveSupplement(form.id, { name, price: 0 });
+      return;
+    }
+    setPendingSupplements((list) => [...list, { name, price: 0 }]);
   }
 
   async function onSubmit(event: FormEvent) {
@@ -204,9 +269,31 @@ export default function MenusPage() {
       } else {
         const { data: createData } = await createMenuItem({ variables: { input } });
         const created = createData?.createMenuItem as MenuItemRow | undefined;
-        await refetch();
-        if (created?.id) {
-          setForm({ ...created, supplements: created.supplements ?? [] });
+
+        if (created?.id && categorySupportsSupplements(category)) {
+          for (const [index, sup] of pendingSupplements.entries()) {
+            await upsertSupplement({
+              variables: {
+                input: {
+                  menuItemId: created.id,
+                  name: sup.name,
+                  price: sup.price,
+                  isAvailable: true,
+                  sortOrder: index,
+                },
+              },
+            });
+          }
+        }
+
+        setPendingSupplements([]);
+        const refreshed = (await refetch()).data?.searchMenuItems?.items ?? [];
+        const updated = created?.id
+          ? refreshed.find((item: MenuItemRow) => item.id === created.id)
+          : undefined;
+
+        if (updated) {
+          setForm({ ...updated, supplements: updated.supplements ?? [] });
         } else {
           setModalOpen(false);
         }
@@ -228,12 +315,6 @@ export default function MenusPage() {
     }
   }
 
-  const canHaveSupplements =
-    form.category !== 'DRINK' &&
-    form.category !== 'DESSERT' &&
-    form.category !== 'FRUIT' &&
-    form.category !== 'SNACK';
-
   return (
     <div className="page-content">
       <PageHeader
@@ -246,7 +327,7 @@ export default function MenusPage() {
         badge={items.length}
         action={
           <button type="button" className="btn" onClick={openCreate} disabled={!selectedRestaurantId}>
-            + Ajouter un plat
+            + Ajouter un élément
           </button>
         }
       />
@@ -298,7 +379,7 @@ export default function MenusPage() {
         </SectionCard>
       ) : null}
 
-      <EmptyState loading={loading} empty={!loading && filteredItems.length === 0} emptyTitle={`Aucun plat dans « ${section.label} »`} emptyHint="Ajoutez un plat pour ce libellé." />
+      <EmptyState loading={loading} empty={!loading && filteredItems.length === 0} emptyTitle={`Aucun élément dans « ${section.label} »`} emptyHint="Ajoutez un plat, une boisson ou un accompagnement pour ce libellé." />
 
       {filteredItems.length > 0 ? (
         <>
@@ -318,7 +399,7 @@ export default function MenusPage() {
               <div className="product-card-body">
                 <h3 className="entity-card-title">{item.name}</h3>
                 <p className="entity-card-meta">{menuCategoryLabel(item.category)} · {item.price} FCFA</p>
-                {item.supplements?.length ? (
+                {item.supplements?.length && categorySupportsSupplements(item.category) ? (
                   <p className="entity-card-meta muted">{item.supplements.length} supplément(s)</p>
                 ) : null}
                 <div className="entity-card-actions">
@@ -341,13 +422,13 @@ export default function MenusPage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={form.id ? 'Modifier le plat' : 'Nouveau plat'}
+        title={form.id ? 'Modifier l’élément' : 'Nouvel élément'}
         subtitle={selectedRestaurant?.name}
         wide
-        footer={<ModalFormFooter formId={FORM_ID} onCancel={() => setModalOpen(false)} saving={saving} submitLabel={form.id ? 'Enregistrer' : 'Créer le plat'} />}
+        footer={<ModalFormFooter formId={FORM_ID} onCancel={() => setModalOpen(false)} saving={saving} submitLabel={form.id ? 'Enregistrer' : 'Créer l’élément'} />}
       >
         <form id={FORM_ID} className="modal-form" onSubmit={onSubmit}>
-          <FormSection title="Plat">
+          <FormSection title="Détails">
             <div className="form-grid form-grid-2">
               <Field label="Nom" required>
                 <input value={form.name ?? ''} onChange={(e) => patchForm({ name: e.target.value })} required />
@@ -360,10 +441,16 @@ export default function MenusPage() {
                   <textarea rows={3} value={form.description ?? ''} onChange={(e) => patchForm({ description: e.target.value })} />
                 </Field>
               </div>
-              <Field label="Libellé menu">
-                <select value={form.category ?? section.categories[0] ?? 'MAIN_COURSE'} onChange={(e) => patchForm({ category: e.target.value })}>
-                  {sectionCategoryOptions.map((cat) => (
-                    <option key={cat.value} value={cat.value}>{cat.label}</option>
+              <Field label="Libellé menu" hint="Rubrique d'affichage dans l'app — boissons et desserts inclus. Les compléments ne sont proposés que pour les repas.">
+                <select value={form.category ?? 'MAIN_COURSE'} onChange={(e) => changeCategory(e.target.value)}>
+                  {RESTAURANT_MENU_SECTIONS.map((s) => (
+                    <optgroup key={s.key} label={s.label}>
+                      {s.categories.map((value) => (
+                        <option key={value} value={value}>
+                          {MENU_ITEM_CATEGORIES.find((cat) => cat.value === value)?.label ?? value}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </Field>
@@ -386,24 +473,58 @@ export default function MenusPage() {
             </div>
           </FormSection>
 
-          {form.id && canHaveSupplements ? (
-            <FormSection title="Suppléments" description="Proposés dans le modal de commande mobile.">
-              <ul className="supplement-list">
-                {(form.supplements ?? []).map((sup) => (
-                  <li key={sup.id}>
-                    <span>{sup.name} — {sup.price} FCFA</span>
-                    <div className="actions">
-                      <button type="button" className="btn secondary btn-sm" onClick={() => setSupplementDraft(sup)}>Modifier</button>
-                      <button type="button" className="btn danger btn-sm" onClick={() => removeSupplement(sup.id, form.id!)}>Supprimer</button>
-                    </div>
-                  </li>
+          {supplementsEnabled ? (
+            <FormSection
+              title="Compléments / suppléments"
+              description="Riz, banane, ketchup, boisson… tout ce qui peut accompagner ce plat dans l'app."
+            >
+              {(form.supplements?.length ?? 0) > 0 || pendingSupplements.length > 0 ? (
+                <ul className="supplement-list">
+                  {(form.supplements ?? []).map((sup) => (
+                    <li key={sup.id}>
+                      <span>{sup.name} — {sup.price} FCFA</span>
+                      <div className="actions">
+                        <button type="button" className="btn secondary btn-sm" onClick={() => setSupplementDraft(sup)}>Modifier</button>
+                        <button type="button" className="btn danger btn-sm" onClick={() => removeSupplement(sup.id, form.id!)}>Supprimer</button>
+                      </div>
+                    </li>
+                  ))}
+                  {pendingSupplements.map((sup, index) => (
+                    <li key={`pending-${index}`}>
+                      <span>{sup.name} — {sup.price} FCFA</span>
+                      <div className="actions">
+                        <button type="button" className="btn secondary btn-sm" onClick={() => editPendingSupplement(index)}>Modifier</button>
+                        <button type="button" className="btn danger btn-sm" onClick={() => removePendingSupplement(index)}>Supprimer</button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">Aucun complément pour l’instant.</p>
+              )}
+
+              <div className="chip-row supplement-presets">
+                {COMMON_SUPPLEMENTS.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    className="chip chip--dashed"
+                    onClick={() => quickAddSupplement(name)}
+                  >
+                    + {name}
+                  </button>
                 ))}
-              </ul>
+              </div>
+
               <div className="form-grid form-grid-2 supplement-form">
                 <Field label="Nom">
-                  <input value={supplementDraft.name ?? ''} onChange={(e) => setSupplementDraft((s) => ({ ...s, name: e.target.value }))} />
+                  <input
+                    value={supplementDraft.name ?? ''}
+                    onChange={(e) => setSupplementDraft((s) => ({ ...s, name: e.target.value }))}
+                    placeholder="Ex. Riz"
+                  />
                 </Field>
-                <Field label="Prix">
+                <Field label="Prix (FCFA)">
                   <input type="number" min={0} value={supplementDraft.price ?? 0} onChange={(e) => setSupplementDraft((s) => ({ ...s, price: Number(e.target.value) }))} />
                 </Field>
                 <div className="form-span-2">
@@ -411,23 +532,23 @@ export default function MenusPage() {
                     type="button"
                     className="btn secondary btn-sm"
                     disabled={supplementSaving}
-                    onClick={() => saveSupplement(form.id!)}
+                    onClick={() => void addSupplement()}
                   >
                     {supplementSaving
                       ? 'Enregistrement…'
                       : supplementDraft.id
-                        ? 'Mettre à jour le supplément'
-                        : '+ Ajouter le supplément'}
+                        ? 'Mettre à jour le complément'
+                        : '+ Ajouter le complément'}
                   </button>
                 </div>
               </div>
-            </FormSection>
-          ) : null}
 
-          {!form.id && canHaveSupplements ? (
-            <p className="muted">
-              Après « Créer le plat », ce formulaire reste ouvert pour ajouter des suppléments ci-dessous.
-            </p>
+              {!form.id ? (
+                <p className="muted">
+                  Les compléments ajoutés ici seront enregistrés en même temps que le plat.
+                </p>
+              ) : null}
+            </FormSection>
           ) : null}
 
           {error ? <p className="field-error">{error}</p> : null}

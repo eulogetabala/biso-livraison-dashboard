@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useAuth } from '../auth';
-import { assetUrl, uploadImage } from '../lib/api';
+import { assetUrl, UPLOAD_ACCEPT, uploadImage } from '../lib/api';
 
 type Props = {
   name?: string;
@@ -60,7 +60,7 @@ export default function RestaurantBrandingUpload({
         <input
           ref={coverRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept={UPLOAD_ACCEPT}
           hidden
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -85,7 +85,7 @@ export default function RestaurantBrandingUpload({
         </button>
         <div className="restaurant-branding-meta">
           <strong>{name?.trim() || 'Nom du restaurant'}</strong>
-          <p className="muted">Logo carré · vignette dans les listes</p>
+          <p className="muted">Logo carré · JPG, PNG ou WebP · 10 Mo max</p>
           <div className="restaurant-branding-logo-actions">
             <button type="button" className="btn btn-sm secondary" disabled={uploadingLogo} onClick={() => logoRef.current?.click()}>
               {uploadingLogo ? 'Envoi…' : logoUrl ? 'Remplacer le logo' : 'Choisir le logo'}
@@ -100,7 +100,7 @@ export default function RestaurantBrandingUpload({
         <input
           ref={logoRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          accept={UPLOAD_ACCEPT}
           hidden
           onChange={(e) => {
             const file = e.target.files?.[0];
